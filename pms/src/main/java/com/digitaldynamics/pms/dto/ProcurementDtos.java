@@ -45,6 +45,11 @@ public final class ProcurementDtos {
     public record ApprovalActionRequest(@NotNull ApprovalDecision decision, String comments) {
     }
 
+    public record ApprovalResponse(Long id, Long requisitionId, String requisitionTitle,
+                                   String requesterEmail, BigDecimal totalAmount, int approvalLevel,
+                                   String approverEmail, ApprovalDecision decision, String comments) {
+    }
+
     public record RfqRequest(@NotNull Long requisitionId, @Future Instant submissionDeadline,
                              @Min(0) @Max(100) int priceWeight, @Min(0) @Max(100) int deliveryWeight,
                              @Min(0) @Max(100) int qualityWeight, @Min(0) @Max(100) int termsWeight,
