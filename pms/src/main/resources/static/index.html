@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Digital Dynamics PMS</title>
+  <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+  <aside>
+    <h1>Digital Dynamics PMS</h1>
+    <form id="loginForm">
+      <label>Email <input id="email" type="email" value="admin@digitaldynamics.co.za"></label>
+      <label>Password <input id="password" type="password" value="Password123!"></label>
+      <button type="submit">Sign in</button>
+    </form>
+    <nav>
+      <button data-view="dashboard">Dashboard</button>
+      <button data-view="requisition">New requisition</button>
+      <button data-view="supplier">Supplier</button>
+      <button data-view="assistant">Assistant</button>
+    </nav>
+  </aside>
+  <main>
+    <section id="session"></section>
+    <section id="content"></section>
+  </main>
+  <script src="/js/app.js"></script>
+</body>
+</html>
