@@ -1,6 +1,7 @@
 package com.digitaldynamics.pms.service;
 
 import com.digitaldynamics.pms.dto.ProcurementDtos.ApprovalActionRequest;
+import com.digitaldynamics.pms.dto.ProcurementDtos.ApprovalResponse;
 import com.digitaldynamics.pms.dto.ProcurementDtos.AwardRequest;
 import com.digitaldynamics.pms.dto.ProcurementDtos.GrnRequest;
 import com.digitaldynamics.pms.dto.ProcurementDtos.PurchaseOrderResponse;
@@ -59,10 +60,10 @@ public class ProcurementService {
     private final AuditService auditService;
 
     public ProcurementService(SupplierRepository supplierRepository, RequisitionRepository requisitionRepository,
-                              ApprovalRepository approvalRepository, RfqRepository rfqRepository,
-                              QuotationRepository quotationRepository, PurchaseOrderRepository purchaseOrderRepository,
-                              GoodsReceivedNoteRepository grnRepository, UserRepository userRepository,
-                              AuditService auditService) {
+            ApprovalRepository approvalRepository, RfqRepository rfqRepository,
+            QuotationRepository quotationRepository, PurchaseOrderRepository purchaseOrderRepository,
+            GoodsReceivedNoteRepository grnRepository, UserRepository userRepository,
+            AuditService auditService) {
         this.supplierRepository = supplierRepository;
         this.requisitionRepository = requisitionRepository;
         this.approvalRepository = approvalRepository;
@@ -128,13 +129,20 @@ public class ProcurementService {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Only draft requisitions may be submitted");
         }
         requisition.setStatus(RequisitionStatus.SUBMITTED);
-        createApproval(requisition, approvalRoleFor(requisition.getTotalAmount()), approvalLevelFor(requisition.getTotalAmount()));
+        createApproval(requisition, approvalRoleFor(requisition.getTotalAmount()),
+                approvalLevelFor(requisition.getTotalAmount()));
         auditService.record(actor, "SUBMIT_REQUISITION", "Requisition", id, "Requisition submitted for approval");
         return requisitionResponse(requisition);
     }
 
     @Transactional
     public void decideApproval(Long approvalId, ApprovalActionRequest request, Long approverId, String actor) {
+        decideApproval(approvalId, request, approverId, actor, false);
+    }
+
+    @Transactional
+    public void decideApproval(Long approvalId, ApprovalActionRequest request, Long approverId, String actor,
+            boolean adminOverride) {
         Approval approval = approvalRepository.findById(approvalId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Approval not found"));
         if (!approval.getApprover().getId().equals(approverId)) {
@@ -151,7 +159,8 @@ public class ProcurementService {
         approval.setDecidedAt(Instant.now());
         Requisition requisition = approval.getRequisition();
         requisition.setStatus(request.decision() == ApprovalDecision.APPROVED
-                ? RequisitionStatus.APPROVED : RequisitionStatus.REJECTED);
+                ? RequisitionStatus.APPROVED
+                : RequisitionStatus.REJECTED);
         auditService.record(actor, "DECIDE_APPROVAL", "Approval", approvalId, "Decision: " + request.decision());
     }
 
@@ -213,11 +222,14 @@ public class ProcurementService {
         if (quotes.isEmpty()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "No quotations to evaluate");
         }
-        BigDecimal lowest = quotes.stream().map(Quotation::getTotalAmount).min(Comparator.naturalOrder()).orElse(BigDecimal.ONE);
+        BigDecimal lowest = quotes.stream().map(Quotation::getTotalAmount).min(Comparator.naturalOrder())
+                .orElse(BigDecimal.ONE);
         int fastest = quotes.stream().mapToInt(Quotation::getDeliveryDays).min().orElse(1);
         for (Quotation quote : quotes) {
-            BigDecimal priceScore = lowest.divide(quote.getTotalAmount(), 6, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100));
-            BigDecimal deliveryScore = BigDecimal.valueOf(fastest).divide(BigDecimal.valueOf(quote.getDeliveryDays()), 6, RoundingMode.HALF_UP)
+            BigDecimal priceScore = lowest.divide(quote.getTotalAmount(), 6, RoundingMode.HALF_UP)
+                    .multiply(BigDecimal.valueOf(100));
+            BigDecimal deliveryScore = BigDecimal.valueOf(fastest)
+                    .divide(BigDecimal.valueOf(quote.getDeliveryDays()), 6, RoundingMode.HALF_UP)
                     .multiply(BigDecimal.valueOf(100));
             BigDecimal score = weighted(priceScore, rfq.getPriceWeight())
                     .add(weighted(deliveryScore, rfq.getDeliveryWeight()))
@@ -234,13 +246,15 @@ public class ProcurementService {
     @Transactional
     public PurchaseOrderResponse award(AwardRequest request, String actor) {
         Quotation recommended = quotation(request.quotationId());
-        Quotation selected = request.overrideQuotationId() == null ? recommended : quotation(request.overrideQuotationId());
+        Quotation selected = request.overrideQuotationId() == null ? recommended
+                : quotation(request.overrideQuotationId());
         if (!selected.getRfq().getId().equals(recommended.getRfq().getId())) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Override quotation must belong to the same RFQ");
         }
         if (!selected.getId().equals(recommended.getId())
                 && (request.overrideJustification() == null || request.overrideJustification().isBlank())) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Override of recommended supplier requires written justification");
+            throw new ApiException(HttpStatus.BAD_REQUEST,
+                    "Override of recommended supplier requires written justification");
         }
         quotationRepository.findByRfqId(selected.getRfq().getId()).forEach(q -> q.setWinning(false));
         selected.setWinning(true);
@@ -268,9 +282,11 @@ public class ProcurementService {
         boolean discrepancy = request.receivedValue().compareTo(po.getTotalAmount()) != 0;
         grn.setDiscrepancy(discrepancy);
         po.setStatus(discrepancy ? PurchaseOrderStatus.DISCREPANCY : PurchaseOrderStatus.RECEIVED);
-        po.getQuotation().getRfq().getRequisition().setStatus(discrepancy ? RequisitionStatus.DISCREPANCY : RequisitionStatus.RECEIVED);
+        po.getQuotation().getRfq().getRequisition()
+                .setStatus(discrepancy ? RequisitionStatus.DISCREPANCY : RequisitionStatus.RECEIVED);
         grnRepository.save(grn);
-        auditService.record(actor, "CAPTURE_GRN", "GoodsReceivedNote", grn.getId(), discrepancy ? "Discrepancy flagged" : "Goods received");
+        auditService.record(actor, "CAPTURE_GRN", "GoodsReceivedNote", grn.getId(),
+                discrepancy ? "Discrepancy flagged" : "Goods received");
     }
 
     @Transactional(readOnly = true)
@@ -279,8 +295,7 @@ public class ProcurementService {
                 "submittedRequisitions", requisitionRepository.countByStatus(RequisitionStatus.SUBMITTED),
                 "approvedRequisitions", requisitionRepository.countByStatus(RequisitionStatus.APPROVED),
                 "openRfqs", rfqRepository.findByStatus(RfqStatus.OPEN).size(),
-                "approvedSuppliers", supplierRepository.findByStatus(SupplierStatus.APPROVED).size()
-        );
+                "approvedSuppliers", supplierRepository.findByStatus(SupplierStatus.APPROVED).size());
     }
 
     @Transactional(readOnly = true)
@@ -294,8 +309,30 @@ public class ProcurementService {
     }
 
     @Transactional(readOnly = true)
+    public List<ApprovalResponse> pendingApprovals(String approverEmail, boolean adminView) {
+        List<Approval> approvals = adminView
+                ? approvalRepository.findAll().stream()
+                        .filter(approval -> approval.getDecision() == ApprovalDecision.PENDING)
+                        .toList()
+                : approvalRepository.findByApproverEmailAndDecision(approverEmail, ApprovalDecision.PENDING);
+
+        return approvals.stream()
+                .sorted(Comparator.comparing(approval -> approval.getRequisition().getId()))
+                .map(this::approvalResponse)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
     public List<RfqResponse> rfqs() {
         return rfqRepository.findAll().stream().map(this::rfqResponse).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<PurchaseOrderResponse> purchaseOrders() {
+        return purchaseOrderRepository.findAll()
+                .stream()
+                .map(this::poResponse)
+                .toList();
     }
 
     private void createApproval(Requisition requisition, UserRole role, int level) {
@@ -330,11 +367,13 @@ public class ProcurementService {
     }
 
     private Supplier supplier(Long id) {
-        return supplierRepository.findById(id).orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Supplier not found"));
+        return supplierRepository.findById(id)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Supplier not found"));
     }
 
     private Requisition requisition(Long id) {
-        return requisitionRepository.findById(id).orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Requisition not found"));
+        return requisitionRepository.findById(id)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Requisition not found"));
     }
 
     private Rfq rfq(Long id) {
@@ -342,7 +381,8 @@ public class ProcurementService {
     }
 
     private Quotation quotation(Long id) {
-        return quotationRepository.findById(id).orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Quotation not found"));
+        return quotationRepository.findById(id)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Quotation not found"));
     }
 
     private SupplierResponse supplierResponse(Supplier supplier) {
@@ -355,6 +395,13 @@ public class ProcurementService {
                 requisition.getTotalAmount(), requisition.getRequester().getEmail());
     }
 
+    private ApprovalResponse approvalResponse(Approval approval) {
+        Requisition requisition = approval.getRequisition();
+        return new ApprovalResponse(approval.getId(), requisition.getId(), requisition.getTitle(),
+                requisition.getRequester().getEmail(), requisition.getTotalAmount(), approval.getApprovalLevel(),
+                approval.getApprover().getEmail(), approval.getDecision(), approval.getComments());
+    }
+
     private RfqResponse rfqResponse(Rfq rfq) {
         return new RfqResponse(rfq.getId(), rfq.getRfqNumber(), rfq.getRequisition().getId(),
                 rfq.getSubmissionDeadline(), rfq.getStatus());
@@ -362,7 +409,8 @@ public class ProcurementService {
 
     private QuotationResponse quotationResponse(Quotation quotation) {
         return new QuotationResponse(quotation.getId(), quotation.getRfq().getId(), quotation.getSupplier().getId(),
-                quotation.getTotalAmount(), quotation.getDeliveryDays(), quotation.getEvaluationScore(), quotation.isWinning());
+                quotation.getTotalAmount(), quotation.getDeliveryDays(), quotation.getEvaluationScore(),
+                quotation.isWinning());
     }
 
     private PurchaseOrderResponse poResponse(PurchaseOrder po) {

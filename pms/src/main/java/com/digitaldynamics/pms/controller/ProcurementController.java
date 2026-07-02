@@ -1,6 +1,7 @@
 package com.digitaldynamics.pms.controller;
 
 import com.digitaldynamics.pms.dto.ProcurementDtos.ApprovalActionRequest;
+import com.digitaldynamics.pms.dto.ProcurementDtos.ApprovalResponse;
 import com.digitaldynamics.pms.dto.ProcurementDtos.AwardRequest;
 import com.digitaldynamics.pms.dto.ProcurementDtos.GrnRequest;
 import com.digitaldynamics.pms.dto.ProcurementDtos.PurchaseOrderResponse;
@@ -13,6 +14,7 @@ import com.digitaldynamics.pms.dto.ProcurementDtos.RfqResponse;
 import com.digitaldynamics.pms.dto.ProcurementDtos.SupplierRequest;
 import com.digitaldynamics.pms.dto.ProcurementDtos.SupplierResponse;
 import com.digitaldynamics.pms.model.SupplierStatus;
+import com.digitaldynamics.pms.model.UserRole;
 import com.digitaldynamics.pms.security.CurrentUser;
 import com.digitaldynamics.pms.service.ProcurementService;
 import jakarta.validation.Valid;
@@ -57,7 +59,7 @@ public class ProcurementController {
     @PutMapping("/suppliers/{id}/status")
     @PreAuthorize("hasAnyRole('ADMIN','PROCUREMENT_OFFICER')")
     SupplierResponse supplierStatus(@PathVariable Long id, @RequestParam SupplierStatus status,
-                                    @AuthenticationPrincipal CurrentUser user) {
+            @AuthenticationPrincipal CurrentUser user) {
         return procurementService.setSupplierStatus(id, status, user.email());
     }
 
@@ -69,7 +71,7 @@ public class ProcurementController {
     @PostMapping("/requisitions")
     @PreAuthorize("hasAnyRole('REQUESTER','ADMIN')")
     RequisitionResponse requisition(@Valid @RequestBody RequisitionRequest request,
-                                    @AuthenticationPrincipal CurrentUser user) {
+            @AuthenticationPrincipal CurrentUser user) {
         return procurementService.createRequisition(request, user.id(), user.email());
     }
 
@@ -79,11 +81,17 @@ public class ProcurementController {
         return procurementService.submitRequisition(id, user.email());
     }
 
+    @GetMapping("/approvals")
+    @PreAuthorize("hasAnyRole('APPROVER_LEVEL_1','APPROVER_LEVEL_2','APPROVER_LEVEL_3','ADMIN')")
+    List<ApprovalResponse> approvals(@AuthenticationPrincipal CurrentUser user) {
+        return procurementService.pendingApprovals(user.email(), user.hasRole(UserRole.ADMIN));
+    }
+
     @PostMapping("/approvals/{id}/decision")
     @PreAuthorize("hasAnyRole('APPROVER_LEVEL_1','APPROVER_LEVEL_2','APPROVER_LEVEL_3','ADMIN')")
     void decide(@PathVariable Long id, @Valid @RequestBody ApprovalActionRequest request,
-                @AuthenticationPrincipal CurrentUser user) {
-        procurementService.decideApproval(id, request, user.id(), user.email());
+            @AuthenticationPrincipal CurrentUser user) {
+        procurementService.decideApproval(id, request, user.id(), user.email(), user.hasRole(UserRole.ADMIN));
     }
 
     @GetMapping("/rfqs")
@@ -112,6 +120,12 @@ public class ProcurementController {
     @PreAuthorize("hasAnyRole('PROCUREMENT_OFFICER','ADMIN')")
     PurchaseOrderResponse award(@Valid @RequestBody AwardRequest request, @AuthenticationPrincipal CurrentUser user) {
         return procurementService.award(request, user.email());
+    }
+
+    @GetMapping("/purchase-orders")
+    @PreAuthorize("hasAnyRole('ADMIN','PROCUREMENT_OFFICER','RECEIVING_CLERK')")
+    List<PurchaseOrderResponse> purchaseOrders() {
+        return procurementService.purchaseOrders();
     }
 
     @PostMapping("/grns")
