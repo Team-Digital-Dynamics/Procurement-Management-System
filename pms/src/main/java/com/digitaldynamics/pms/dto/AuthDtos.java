@@ -13,11 +13,19 @@ public final class AuthDtos {
     public record RegisterRequest(
             @Email @NotBlank String email,
             @NotBlank @Size(min = 8) String password,
-            @NotBlank String fullName
-    ) {
+            @NotBlank String fullName) {
     }
 
     public record LoginRequest(@Email @NotBlank String email, @NotBlank String password) {
+    }
+
+    public record ResetPasswordRequest(
+            @Email @NotBlank String email,
+            @NotBlank @Size(min = 8) String newPassword,
+            @NotBlank String confirmPassword) {
+    }
+
+    public record MessageResponse(String message) {
     }
 
     public record AuthResponse(String token, Long userId, String email, String fullName, Set<UserRole> roles) {
