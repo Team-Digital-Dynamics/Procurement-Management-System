@@ -15,14 +15,8 @@ public class AuditService {
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void record(String actor, String action, String entityType, Object entityId, String details) {
-        AuditLog log = new AuditLog(
-                actor == null ? "system" : actor,
-                action,
-                entityType,
-                entityId == null ? null : String.valueOf(entityId),
-                details
-        );
-        auditLogRepository.save(log);
+    public void logEvent(String actor, String action, String entityType, String entityId, String details) {
+        AuditLog auditLog = new AuditLog(actor, action, entityType, entityId, details);
+        auditLogRepository.save(auditLog);
     }
 }

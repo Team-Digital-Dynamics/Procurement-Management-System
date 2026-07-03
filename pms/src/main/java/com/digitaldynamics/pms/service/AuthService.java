@@ -60,7 +60,8 @@ public class AuthService {
             user.setStatus(AccountStatus.ACTIVE);
         }
 
-        auditService.record(user.getEmail(), "RESET_PASSWORD", "User", user.getId(), "Password reset completed");
+        auditService.logEvent(user.getEmail(), "RESET_PASSWORD", "User", String.valueOf(user.getId()),
+            "Password reset completed");
 
         return new MessageResponse("Password reset successfully. You can now sign in with your new password.");
     }
@@ -77,7 +78,8 @@ public class AuthService {
         user.setStatus(AccountStatus.INACTIVE);
         user.setRole(Role.REQUESTOR);
         userRepository.save(user);
-        auditService.record(user.getEmail(), "REGISTER", "User", user.getId(), "User registered and awaits activation");
+        auditService.logEvent(user.getEmail(), "REGISTER", "User", String.valueOf(user.getId()),
+            "User registered and awaits activation");
         return response(user);
     }
 

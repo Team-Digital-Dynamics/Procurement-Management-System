@@ -78,7 +78,8 @@ public class UserService {
         if (request.status() != null) {
             user.setStatus(request.status());
         }
-        auditService.record(actor, "ASSIGN_ROLES", "User", id, "Roles/status/approval limit updated");
+        auditService.logEvent(actor, "ASSIGN_ROLES", "User", String.valueOf(id),
+            "Roles/status/approval limit updated");
         return toResponse(user);
     }
 
@@ -87,7 +88,7 @@ public class UserService {
         User user = find(id);
         user.setFullName(request.fullName());
         user.setEmail(request.email().toLowerCase());
-        auditService.record(actor, "UPDATE_PROFILE", "User", id, "Profile updated");
+        auditService.logEvent(actor, "UPDATE_PROFILE", "User", String.valueOf(id), "Profile updated");
         return toResponse(user);
     }
 

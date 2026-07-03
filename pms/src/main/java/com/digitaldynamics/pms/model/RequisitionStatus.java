@@ -2,6 +2,7 @@ package com.digitaldynamics.pms.model;
 
 public enum RequisitionStatus {
     DRAFT,
+    PENDING_APPROVAL,
     SUBMITTED,
     APPROVED,
     REJECTED,

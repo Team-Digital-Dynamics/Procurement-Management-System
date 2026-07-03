@@ -92,7 +92,8 @@ public class ProcurementService {
         supplier.setPhone(request.phone());
         supplier.setTaxNumber(request.taxNumber());
         supplierRepository.save(supplier);
-        auditService.record(actor, "CREATE_SUPPLIER", "Supplier", supplier.getId(), "Supplier registered");
+        auditService.logEvent(actor, "CREATE_SUPPLIER", "Supplier", String.valueOf(supplier.getId()),
+            "Supplier registered");
         return procurementMapper.toSupplierResponse(supplier);
     }
 
@@ -100,7 +101,8 @@ public class ProcurementService {
     public SupplierResponse setSupplierStatus(Long id, SupplierStatus status, String actor) {
         Supplier supplier = supplier(id);
         supplier.setStatus(status);
-        auditService.record(actor, "SET_SUPPLIER_STATUS", "Supplier", id, "Supplier status changed to " + status);
+        auditService.logEvent(actor, "SET_SUPPLIER_STATUS", "Supplier", String.valueOf(id),
+            "Supplier status changed to " + status);
         return procurementMapper.toSupplierResponse(supplier);
     }
 
@@ -124,7 +126,8 @@ public class ProcurementService {
         }
         requisition.setTotalAmount(total);
         requisitionRepository.save(requisition);
-        auditService.record(actor, "CREATE_REQUISITION", "Requisition", requisition.getId(), "Requisition drafted");
+        auditService.logEvent(actor, "CREATE_REQUISITION", "Requisition", String.valueOf(requisition.getId()),
+            "Requisition drafted");
         return procurementMapper.toRequisitionResponse(requisition);
     }
 
@@ -137,7 +140,8 @@ public class ProcurementService {
         requisition.setStatus(RequisitionStatus.SUBMITTED);
         createApproval(requisition, approvalRoleFor(requisition.getTotalAmount()),
                 approvalLevelFor(requisition.getTotalAmount()));
-        auditService.record(actor, "SUBMIT_REQUISITION", "Requisition", id, "Requisition submitted for approval");
+        auditService.logEvent(actor, "SUBMIT_REQUISITION", "Requisition", String.valueOf(id),
+            "Requisition submitted for approval");
         return procurementMapper.toRequisitionResponse(requisition);
     }
 
@@ -165,7 +169,8 @@ public class ProcurementService {
         requisition.setStatus(request.decision() == ApprovalDecision.APPROVED
                 ? RequisitionStatus.APPROVED
                 : RequisitionStatus.REJECTED);
-        auditService.record(actor, "DECIDE_APPROVAL", "Approval", approvalId, "Decision: " + request.decision());
+        auditService.logEvent(actor, "DECIDE_APPROVAL", "Approval", String.valueOf(approvalId),
+            "Decision: " + request.decision());
     }
 
     @Transactional
@@ -189,7 +194,8 @@ public class ProcurementService {
         rfq.setPerformanceWeight(request.performanceWeight());
         requisition.setStatus(RequisitionStatus.RFQ_CREATED);
         rfqRepository.save(rfq);
-        auditService.record(actor, "CREATE_RFQ", "Rfq", rfq.getId(), "RFQ created from requisition");
+        auditService.logEvent(actor, "CREATE_RFQ", "Rfq", String.valueOf(rfq.getId()),
+            "RFQ created from requisition");
         return procurementMapper.toRfqResponse(rfq);
     }
 
@@ -215,7 +221,8 @@ public class ProcurementService {
         quotation.setTermsScore(request.termsScore());
         quotation.setSubmittedAt(Instant.now());
         quotationRepository.save(quotation);
-        auditService.record(actor, "SUBMIT_QUOTATION", "Quotation", quotation.getId(), "Quotation submitted");
+        auditService.logEvent(actor, "SUBMIT_QUOTATION", "Quotation", String.valueOf(quotation.getId()),
+            "Quotation submitted");
         return procurementMapper.toQuotationResponse(quotation);
     }
 
@@ -243,7 +250,7 @@ public class ProcurementService {
             quote.setEvaluationScore(score.setScale(3, RoundingMode.HALF_UP));
         }
         rfq.setStatus(RfqStatus.CLOSED);
-        auditService.record(actor, "EVALUATE_RFQ", "Rfq", rfqId, "Quotations evaluated");
+        auditService.logEvent(actor, "EVALUATE_RFQ", "Rfq", String.valueOf(rfqId), "Quotations evaluated");
         return quotes.stream().map(procurementMapper::toQuotationResponse).toList();
     }
 
@@ -270,7 +277,8 @@ public class ProcurementService {
         po.setSupplier(selected.getSupplier());
         po.setTotalAmount(selected.getTotalAmount());
         purchaseOrderRepository.save(po);
-        auditService.record(actor, "AWARD_RFQ", "PurchaseOrder", po.getId(), "PO generated for winning quotation");
+        auditService.logEvent(actor, "AWARD_RFQ", "PurchaseOrder", String.valueOf(po.getId()),
+            "PO generated for winning quotation");
         return procurementMapper.toPurchaseOrderResponse(po);
     }
 
@@ -289,7 +297,7 @@ public class ProcurementService {
         po.getQuotation().getRfq().getRequisition()
                 .setStatus(discrepancy ? RequisitionStatus.DISCREPANCY : RequisitionStatus.RECEIVED);
         grnRepository.save(grn);
-        auditService.record(actor, "CAPTURE_GRN", "GoodsReceivedNote", grn.getId(),
+        auditService.logEvent(actor, "CAPTURE_GRN", "GoodsReceivedNote", String.valueOf(grn.getId()),
                 discrepancy ? "Discrepancy flagged" : "Goods received");
     }
 
