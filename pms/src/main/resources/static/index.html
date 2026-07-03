@@ -1,94 +1,184 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Digital Dynamics PMS | Login</title>
-  <link rel="stylesheet" href="/css/styles.css">
-</head>
-<body>
-  <section class="auth-shell">
-    <div class="auth-card">
-      <div class="auth-brand-panel">
-        <h1>Procurement Management System</h1>
-        <div class="auth-feature-list">
-          <div class="auth-feature-item"><span class="feature-dot"></span><span>Structured procurement workflow</span></div>
-          <div class="auth-feature-item"><span class="feature-dot"></span><span>Role-based access and approvals</span></div>
-          <div class="auth-feature-item"><span class="feature-dot"></span><span>Supplier and RFQ management</span></div>
-          <div class="auth-feature-item"><span class="feature-dot"></span><span>Reports and audit visibility</span></div>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Digital Dynamics PMS | Login</title>
+    <link rel="stylesheet" href="/css/styles.css" />
+  </head>
+  <body>
+    <section class="auth-shell">
+      <div class="auth-card">
+        <div class="auth-brand-panel">
+          <h1>Procurement Management System</h1>
+          <div class="auth-feature-list">
+            <div class="auth-feature-item">
+              <span class="feature-dot"></span
+              ><span>Structured procurement workflow</span>
+            </div>
+            <div class="auth-feature-item">
+              <span class="feature-dot"></span
+              ><span>Role-based access and approvals</span>
+            </div>
+            <div class="auth-feature-item">
+              <span class="feature-dot"></span
+              ><span>Supplier and RFQ management</span>
+            </div>
+            <div class="auth-feature-item">
+              <span class="feature-dot"></span
+              ><span>Reports and audit visibility</span>
+            </div>
+          </div>
         </div>
-      </div>
 
-      <div class="auth-form-panel">
-        <div id="loginPanel">
-          <div class="auth-form-header">
-            <p class="eyebrow">Secure Access</p>
-            <h2>Welcome Back</h2>
-            <p>Sign in to access the procurement workspace.</p>
+        <div class="auth-form-panel">
+          <div id="loginPanel">
+            <div class="auth-form-header">
+              <p class="eyebrow">Secure Access</p>
+              <h2>Welcome Back</h2>
+              <p>Sign in to access the procurement workspace.</p>
+            </div>
+
+            <form id="loginForm" class="auth-form">
+              <div id="loginMessage"></div>
+
+              <div class="form-group">
+                <label for="email">Email Address</label>
+                <input id="email" type="email" required />
+              </div>
+
+              <div class="form-group">
+                <label for="password">Password</label>
+                <input id="password" type="password" required />
+              </div>
+
+              <button class="btn btn-primary btn-full" type="submit">
+                Sign In
+              </button>
+              <p class="muted">
+                Forgot your password?
+                <button id="showForgotBtn" class="link-btn" type="button">
+                  Reset password
+                </button>
+              </p>
+
+              <p class="muted">
+                Need access to the system?
+                <button id="showRegisterBtn" class="link-btn" type="button">
+                  Register
+                </button>
+              </p>
+            </form>
           </div>
 
-          <form id="loginForm" class="auth-form">
-            <div id="loginMessage"></div>
-
-            <div class="form-group">
-              <label for="email">Email Address</label>
-              <input id="email" type="email" required>
+          <div id="registerPanel" class="hidden">
+            <div class="auth-form-header">
+              <p class="eyebrow">Account Request</p>
+              <h2>Create Account</h2>
+              <p>
+                Your account request will be submitted for administrator
+                approval.
+              </p>
             </div>
 
-            <div class="form-group">
-              <label for="password">Password</label>
-              <input id="password" type="password" required>
+            <form id="registerForm" class="auth-form">
+              <div id="registerMessage"></div>
+
+              <div class="form-group">
+                <label for="fullName">Full Name</label>
+                <input id="fullName" name="fullName" type="text" required />
+              </div>
+
+              <div class="form-group">
+                <label for="registerEmail">Email Address</label>
+                <input id="registerEmail" name="email" type="email" required />
+              </div>
+
+              <div class="form-group">
+                <label for="registerPassword">Password</label>
+                <input
+                  id="registerPassword"
+                  name="password"
+                  type="password"
+                  minlength="8"
+                  required
+                />
+              </div>
+
+              <button class="btn btn-primary btn-full" type="submit">
+                Submit Registration
+              </button>
+
+              <p class="muted">
+                Already have an account?
+                <button id="showLoginBtn" class="link-btn" type="button">
+                  Back to login
+                </button>
+              </p>
+            </form>
+          </div>
+          <div id="forgotPanel" class="hidden">
+            <div class="auth-form-header">
+              <p class="eyebrow">Password Recovery</p>
+              <h2>Reset Password</h2>
+              <p>Enter your email address and create a new password.</p>
             </div>
 
-            <button class="btn btn-primary btn-full" type="submit">Sign In</button>
+            <form id="forgotForm" class="auth-form">
+              <div id="forgotMessage"></div>
 
-            <p class="muted">
-              Need access to the system?
-              <button id="showRegisterBtn" class="link-btn" type="button">Register</button>
-            </p>
-          </form>
-        </div>
+              <div class="form-group">
+                <label for="forgotEmail">Email Address</label>
+                <input id="forgotEmail" name="email" type="email" required />
+              </div>
 
-        <div id="registerPanel" class="hidden">
-          <div class="auth-form-header">
-            <p class="eyebrow">Account Request</p>
-            <h2>Create Account</h2>
-            <p>Your account request will be submitted for administrator approval.</p>
+              <div class="form-group">
+                <label for="newPassword">New Password</label>
+                <input
+                  id="newPassword"
+                  name="newPassword"
+                  type="password"
+                  minlength="8"
+                  required
+                />
+              </div>
+
+              <div class="form-group">
+                <label for="confirmPassword">Confirm New Password</label>
+                <input
+                  id="confirmPassword"
+                  name="confirmPassword"
+                  type="password"
+                  minlength="8"
+                  required
+                />
+              </div>
+
+              <button class="btn btn-primary btn-full" type="submit">
+                Reset Password
+              </button>
+
+              <p class="muted">
+                Remembered your password?
+                <button
+                  id="showLoginFromForgotBtn"
+                  class="link-btn"
+                  type="button"
+                >
+                  Back to login
+                </button>
+              </p>
+            </form>
           </div>
 
-          <form id="registerForm" class="auth-form">
-            <div id="registerMessage"></div>
-
-            <div class="form-group">
-              <label for="fullName">Full Name</label>
-              <input id="fullName" name="fullName" type="text" required>
-            </div>
-
-            <div class="form-group">
-              <label for="registerEmail">Email Address</label>
-              <input id="registerEmail" name="email" type="email" required>
-            </div>
-
-            <div class="form-group">
-              <label for="registerPassword">Password</label>
-              <input id="registerPassword" name="password" type="password" minlength="8" required>
-            </div>
-
-            <button class="btn btn-primary btn-full" type="submit">Submit Registration</button>
-
-            <p class="muted">
-              Already have an account?
-              <button id="showLoginBtn" class="link-btn" type="button">Back to login</button>
-            </p>
-          </form>
+          <p class="auth-footer">
+            © 2026 Digital Dynamics. All rights reserved.
+          </p>
         </div>
-
-        <p class="auth-footer">© 2026 Digital Dynamics. All rights reserved.</p>
       </div>
-    </div>
-  </section>
+    </section>
 
-  <script src="/js/api.js"></script>
-  <script src="/js/auth.js"></script>
-</body>
+    <script src="/js/api.js"></script>
+    <script src="/js/auth.js"></script>
+  </body>
 </html>

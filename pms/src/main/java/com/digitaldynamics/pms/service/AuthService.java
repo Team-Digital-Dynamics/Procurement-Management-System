@@ -14,6 +14,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.digitaldynamics.pms.dto.AuthDtos.MessageResponse;
+import com.digitaldynamics.pms.dto.AuthDtos.ResetPasswordRequest;
 
 @Service
 public class AuthService {
@@ -23,11 +25,36 @@ public class AuthService {
     private final AuditService auditService;
 
     public AuthService(UserRepository userRepository, PasswordEncoder passwordEncoder, JwtService jwtService,
-                       AuditService auditService) {
+            AuditService auditService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.auditService = auditService;
+    }
+
+    @Transactional
+    public MessageResponse resetPassword(ResetPasswordRequest request) {
+        if (!request.newPassword().equals(request.confirmPassword())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Passwords do not match");
+        }
+
+        User user = userRepository.findByEmail(request.email().toLowerCase())
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Account not found"));
+
+        if (user.getStatus() == AccountStatus.PENDING) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "Account is still pending administrator approval");
+        }
+
+        user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
+        user.setFailedLoginAttempts(0);
+
+        if (user.getStatus() == AccountStatus.LOCKED) {
+            user.setStatus(AccountStatus.ACTIVE);
+        }
+
+        auditService.record(user.getEmail(), "RESET_PASSWORD", "User", user.getId(), "Password reset completed");
+
+        return new MessageResponse("Password reset successfully. You can now sign in with your new password.");
     }
 
     @Transactional
@@ -58,7 +85,8 @@ public class AuthService {
             user.setFailedLoginAttempts(failed);
             if (failed >= 5) {
                 user.setStatus(AccountStatus.LOCKED);
-                auditService.record(user.getEmail(), "LOCK_ACCOUNT", "User", user.getId(), "Account locked after failed logins");
+                auditService.record(user.getEmail(), "LOCK_ACCOUNT", "User", user.getId(),
+                        "Account locked after failed logins");
             }
             throw new ApiException(HttpStatus.UNAUTHORIZED, "Invalid credentials");
         }
@@ -68,6 +96,7 @@ public class AuthService {
     }
 
     private AuthResponse response(User user) {
-        return new AuthResponse(jwtService.create(user), user.getId(), user.getEmail(), user.getFullName(), user.getRoles());
+        return new AuthResponse(jwtService.create(user), user.getId(), user.getEmail(), user.getFullName(),
+                user.getRoles());
     }
 }

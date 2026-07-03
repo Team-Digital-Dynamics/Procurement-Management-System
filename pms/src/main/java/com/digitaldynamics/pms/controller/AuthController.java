@@ -9,6 +9,8 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import com.digitaldynamics.pms.dto.AuthDtos.MessageResponse;
+import com.digitaldynamics.pms.dto.AuthDtos.ResetPasswordRequest;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -27,5 +29,10 @@ public class AuthController {
     @PostMapping("/login")
     AuthResponse login(@Valid @RequestBody LoginRequest request) {
         return authService.login(request);
+    }
+
+    @PostMapping("/reset-password")
+    MessageResponse resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
+        return authService.resetPassword(request);
     }
 }

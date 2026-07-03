@@ -20,6 +20,7 @@
     { href: "/rfqs.html", label: "RFQs", page: "rfqs", roles: ["ADMIN", "PROCUREMENT_OFFICER"] },
     { href: "/purchase-orders.html", label: "Purchase Orders", page: "purchase-orders", roles: "all" },
     { href: "/reports.html", label: "Reports", page: "reports", roles: ["ADMIN", "PROCUREMENT_OFFICER"] },
+    { href: "/ai-assistant.html", label: "AI Assistant", page: "ai-assistant", roles: "all" },
     { href: "/audit-logs.html", label: "Audit Logs", page: "audit-logs", roles: ["ADMIN"] },
     { href: "/users.html", label: "Users", page: "users", roles: ["ADMIN"] }
   ];
@@ -180,9 +181,11 @@
           <main id="content" class="view-container"></main>
         </div>
       </div>
+       ${activePage === "ai-assistant" ? "" : scoutPopupTemplate()}
     `;
 
     document.getElementById("logoutBtn").addEventListener("click", logout);
+    attachScoutPopupEvents();
   }
 
   function setContent(html) {
@@ -260,7 +263,150 @@
   function formDataToObject(form) {
     return Object.fromEntries(new FormData(form).entries());
   }
+let scoutPopupMessages = [
+  {
+    sender: "assistant",
+    text: "Hi, I'm Scout. How can I help you today?"
+  }
+];
 
+function scoutPopupTemplate() {
+  return `
+    <div class="scout-widget">
+      <section id="scoutChatBox" class="scout-chat-box hidden">
+        <div class="scout-chat-header">
+          <div class="scout-header-left">
+            <img src="/images/Ai_popup.png" alt="Scout AI Assistant" class="scout-header-avatar">
+
+            <div>
+              <h3>Scout</h3>
+              <p><span></span>Assistant Ready</p>
+            </div>
+          </div>
+
+          <button id="scoutCloseBtn" class="scout-close-btn" type="button" aria-label="Close Scout chat">
+            ×
+          </button>
+        </div>
+
+        <div id="scoutMessages" class="scout-chat-messages">
+          ${scoutPopupMessages.map(scoutMessageTemplate).join("")}
+        </div>
+
+        <form id="scoutForm" class="scout-input-area">
+          <input
+            id="scoutInput"
+            type="text"
+            placeholder="Ask Scout..."
+            autocomplete="off"
+            required
+          >
+
+          <button type="submit" aria-label="Send message">
+            ➤
+          </button>
+        </form>
+      </section>
+
+      <button id="scoutBubbleBtn" class="scout-bubble-btn" type="button" aria-label="Open Scout assistant">
+        <img src="/images/Ai_popup.png" alt="Scout">
+      </button>
+    </div>
+  `;
+}
+
+function scoutMessageTemplate(message) {
+  const isUser = message.sender === "user";
+
+  return `
+    <div class="scout-message-row ${isUser ? "user" : "assistant"}">
+      ${!isUser ? `<img src="/images/Ai_popup.png" alt="Scout" class="scout-message-avatar">` : ""}
+
+      <div class="scout-message-bubble">
+        ${escapeHtml(message.text)}
+      </div>
+    </div>
+  `;
+}
+
+function attachScoutPopupEvents() {
+  const bubbleBtn = document.getElementById("scoutBubbleBtn");
+  const chatBox = document.getElementById("scoutChatBox");
+  const closeBtn = document.getElementById("scoutCloseBtn");
+  const form = document.getElementById("scoutForm");
+
+  if (!bubbleBtn || !chatBox || !closeBtn || !form) return;
+
+  bubbleBtn.addEventListener("click", function () {
+    chatBox.classList.toggle("hidden");
+    refreshScoutMessages();
+  });
+
+  closeBtn.addEventListener("click", function () {
+    chatBox.classList.add("hidden");
+  });
+
+  form.addEventListener("submit", handleScoutSubmit);
+}
+
+async function handleScoutSubmit(event) {
+  event.preventDefault();
+
+  const input = document.getElementById("scoutInput");
+  const question = input.value.trim();
+
+  if (!question) return;
+
+  scoutPopupMessages.push({
+    sender: "user",
+    text: question
+  });
+
+  input.value = "";
+
+  scoutPopupMessages.push({
+    sender: "assistant",
+    text: "Thinking..."
+  });
+
+  refreshScoutMessages();
+
+  try {
+    const response = await api("/api/assistant", {
+      method: "POST",
+      body: JSON.stringify({
+        message: question
+      })
+    });
+
+    scoutPopupMessages.pop();
+
+    scoutPopupMessages.push({
+      sender: "assistant",
+      text: response.answer || "I received your question, but no answer was returned."
+    });
+
+    refreshScoutMessages();
+  } catch (error) {
+    scoutPopupMessages.pop();
+
+    scoutPopupMessages.push({
+      sender: "assistant",
+      text: "Sorry, I could not reach the assistant service right now."
+    });
+
+    refreshScoutMessages();
+  }
+}
+
+function refreshScoutMessages() {
+  const messages = document.getElementById("scoutMessages");
+
+  if (!messages) return;
+
+  messages.innerHTML = scoutPopupMessages.map(scoutMessageTemplate).join("");
+  messages.scrollTop = messages.scrollHeight;
+}
   window.PMS = {
     ROLE_LABELS,
     getToken,
