@@ -37,6 +37,7 @@ import com.digitaldynamics.pms.repository.RequisitionRepository;
 import com.digitaldynamics.pms.repository.RfqRepository;
 import com.digitaldynamics.pms.repository.SupplierRepository;
 import com.digitaldynamics.pms.repository.UserRepository;
+import com.digitaldynamics.pms.security.SegregationOfDutiesGuard;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
@@ -58,12 +59,15 @@ public class ProcurementService {
     private final GoodsReceivedNoteRepository grnRepository;
     private final UserRepository userRepository;
     private final AuditService auditService;
+    private final ProcurementMapper procurementMapper;
+    private final SegregationOfDutiesGuard segregationOfDutiesGuard;
 
     public ProcurementService(SupplierRepository supplierRepository, RequisitionRepository requisitionRepository,
             ApprovalRepository approvalRepository, RfqRepository rfqRepository,
             QuotationRepository quotationRepository, PurchaseOrderRepository purchaseOrderRepository,
             GoodsReceivedNoteRepository grnRepository, UserRepository userRepository,
-            AuditService auditService) {
+            AuditService auditService, ProcurementMapper procurementMapper,
+            SegregationOfDutiesGuard segregationOfDutiesGuard) {
         this.supplierRepository = supplierRepository;
         this.requisitionRepository = requisitionRepository;
         this.approvalRepository = approvalRepository;
@@ -73,6 +77,8 @@ public class ProcurementService {
         this.grnRepository = grnRepository;
         this.userRepository = userRepository;
         this.auditService = auditService;
+        this.procurementMapper = procurementMapper;
+        this.segregationOfDutiesGuard = segregationOfDutiesGuard;
     }
 
     @Transactional
@@ -87,7 +93,7 @@ public class ProcurementService {
         supplier.setTaxNumber(request.taxNumber());
         supplierRepository.save(supplier);
         auditService.record(actor, "CREATE_SUPPLIER", "Supplier", supplier.getId(), "Supplier registered");
-        return supplierResponse(supplier);
+        return procurementMapper.toSupplierResponse(supplier);
     }
 
     @Transactional
@@ -95,7 +101,7 @@ public class ProcurementService {
         Supplier supplier = supplier(id);
         supplier.setStatus(status);
         auditService.record(actor, "SET_SUPPLIER_STATUS", "Supplier", id, "Supplier status changed to " + status);
-        return supplierResponse(supplier);
+        return procurementMapper.toSupplierResponse(supplier);
     }
 
     @Transactional
@@ -119,7 +125,7 @@ public class ProcurementService {
         requisition.setTotalAmount(total);
         requisitionRepository.save(requisition);
         auditService.record(actor, "CREATE_REQUISITION", "Requisition", requisition.getId(), "Requisition drafted");
-        return requisitionResponse(requisition);
+        return procurementMapper.toRequisitionResponse(requisition);
     }
 
     @Transactional
@@ -132,7 +138,7 @@ public class ProcurementService {
         createApproval(requisition, approvalRoleFor(requisition.getTotalAmount()),
                 approvalLevelFor(requisition.getTotalAmount()));
         auditService.record(actor, "SUBMIT_REQUISITION", "Requisition", id, "Requisition submitted for approval");
-        return requisitionResponse(requisition);
+        return procurementMapper.toRequisitionResponse(requisition);
     }
 
     @Transactional
@@ -148,9 +154,7 @@ public class ProcurementService {
         if (!approval.getApprover().getId().equals(approverId)) {
             throw new ApiException(HttpStatus.FORBIDDEN, "Approval is not assigned to this user");
         }
-        if (approval.getRequisition().getRequester().getId().equals(approverId)) {
-            throw new ApiException(HttpStatus.FORBIDDEN, "Self-approval is forbidden");
-        }
+        segregationOfDutiesGuard.verifyApprovalEligibility(approverId, approval.getRequisition().getRequester().getId());
         if (approval.getDecision() != ApprovalDecision.PENDING) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Approval already decided");
         }
@@ -186,7 +190,7 @@ public class ProcurementService {
         requisition.setStatus(RequisitionStatus.RFQ_CREATED);
         rfqRepository.save(rfq);
         auditService.record(actor, "CREATE_RFQ", "Rfq", rfq.getId(), "RFQ created from requisition");
-        return rfqResponse(rfq);
+        return procurementMapper.toRfqResponse(rfq);
     }
 
     @Transactional
@@ -212,7 +216,7 @@ public class ProcurementService {
         quotation.setSubmittedAt(Instant.now());
         quotationRepository.save(quotation);
         auditService.record(actor, "SUBMIT_QUOTATION", "Quotation", quotation.getId(), "Quotation submitted");
-        return quotationResponse(quotation);
+        return procurementMapper.toQuotationResponse(quotation);
     }
 
     @Transactional
@@ -240,7 +244,7 @@ public class ProcurementService {
         }
         rfq.setStatus(RfqStatus.CLOSED);
         auditService.record(actor, "EVALUATE_RFQ", "Rfq", rfqId, "Quotations evaluated");
-        return quotes.stream().map(this::quotationResponse).toList();
+        return quotes.stream().map(procurementMapper::toQuotationResponse).toList();
     }
 
     @Transactional
@@ -267,7 +271,7 @@ public class ProcurementService {
         po.setTotalAmount(selected.getTotalAmount());
         purchaseOrderRepository.save(po);
         auditService.record(actor, "AWARD_RFQ", "PurchaseOrder", po.getId(), "PO generated for winning quotation");
-        return poResponse(po);
+        return procurementMapper.toPurchaseOrderResponse(po);
     }
 
     @Transactional
@@ -300,12 +304,12 @@ public class ProcurementService {
 
     @Transactional(readOnly = true)
     public List<SupplierResponse> suppliers() {
-        return supplierRepository.findAll().stream().map(this::supplierResponse).toList();
+        return supplierRepository.findAll().stream().map(procurementMapper::toSupplierResponse).toList();
     }
 
     @Transactional(readOnly = true)
     public List<RequisitionResponse> requisitions() {
-        return requisitionRepository.findAll().stream().map(this::requisitionResponse).toList();
+        return requisitionRepository.findAll().stream().map(procurementMapper::toRequisitionResponse).toList();
     }
 
     @Transactional(readOnly = true)
@@ -318,20 +322,20 @@ public class ProcurementService {
 
         return approvals.stream()
                 .sorted(Comparator.comparing(approval -> approval.getRequisition().getId()))
-                .map(this::approvalResponse)
+            .map(procurementMapper::toApprovalResponse)
                 .toList();
     }
 
     @Transactional(readOnly = true)
     public List<RfqResponse> rfqs() {
-        return rfqRepository.findAll().stream().map(this::rfqResponse).toList();
+        return rfqRepository.findAll().stream().map(procurementMapper::toRfqResponse).toList();
     }
 
     @Transactional(readOnly = true)
     public List<PurchaseOrderResponse> purchaseOrders() {
         return purchaseOrderRepository.findAll()
                 .stream()
-                .map(this::poResponse)
+            .map(procurementMapper::toPurchaseOrderResponse)
                 .toList();
     }
 
@@ -385,36 +389,4 @@ public class ProcurementService {
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Quotation not found"));
     }
 
-    private SupplierResponse supplierResponse(Supplier supplier) {
-        return new SupplierResponse(supplier.getId(), supplier.getName(), supplier.getContactEmail(),
-                supplier.getStatus(), supplier.getPerformanceScore());
-    }
-
-    private RequisitionResponse requisitionResponse(Requisition requisition) {
-        return new RequisitionResponse(requisition.getId(), requisition.getTitle(), requisition.getStatus(),
-                requisition.getTotalAmount(), requisition.getRequester().getEmail());
-    }
-
-    private ApprovalResponse approvalResponse(Approval approval) {
-        Requisition requisition = approval.getRequisition();
-        return new ApprovalResponse(approval.getId(), requisition.getId(), requisition.getTitle(),
-                requisition.getRequester().getEmail(), requisition.getTotalAmount(), approval.getApprovalLevel(),
-                approval.getApprover().getEmail(), approval.getDecision(), approval.getComments());
-    }
-
-    private RfqResponse rfqResponse(Rfq rfq) {
-        return new RfqResponse(rfq.getId(), rfq.getRfqNumber(), rfq.getRequisition().getId(),
-                rfq.getSubmissionDeadline(), rfq.getStatus());
-    }
-
-    private QuotationResponse quotationResponse(Quotation quotation) {
-        return new QuotationResponse(quotation.getId(), quotation.getRfq().getId(), quotation.getSupplier().getId(),
-                quotation.getTotalAmount(), quotation.getDeliveryDays(), quotation.getEvaluationScore(),
-                quotation.isWinning());
-    }
-
-    private PurchaseOrderResponse poResponse(PurchaseOrder po) {
-        return new PurchaseOrderResponse(po.getId(), po.getPoNumber(), po.getSupplier().getId(),
-                po.getTotalAmount(), po.getStatus().name());
-    }
 }

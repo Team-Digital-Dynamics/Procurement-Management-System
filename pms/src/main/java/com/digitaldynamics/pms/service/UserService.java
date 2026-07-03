@@ -1,24 +1,64 @@
 package com.digitaldynamics.pms.service;
 
+import com.digitaldynamics.pms.dto.UserProfileUpdateDTO;
+import com.digitaldynamics.pms.dto.UserRegistrationDTO;
 import com.digitaldynamics.pms.dto.UserDtos.AssignRolesRequest;
 import com.digitaldynamics.pms.dto.UserDtos.ProfileUpdateRequest;
 import com.digitaldynamics.pms.dto.UserDtos.UserResponse;
 import com.digitaldynamics.pms.exception.ApiException;
+import com.digitaldynamics.pms.exception.EmailAlreadyExistsException;
+import com.digitaldynamics.pms.exception.ResourceNotFoundException;
+import com.digitaldynamics.pms.model.AccountStatus;
 import com.digitaldynamics.pms.model.User;
 import com.digitaldynamics.pms.repository.UserRepository;
+import jakarta.validation.Valid;
 import java.util.List;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.validation.annotation.Validated;
 
 @Service
+@Validated
 public class UserService {
     private final UserRepository userRepository;
+    private final BCryptPasswordEncoder passwordEncoder;
     private final AuditService auditService;
 
-    public UserService(UserRepository userRepository, AuditService auditService) {
+    public UserService(UserRepository userRepository, BCryptPasswordEncoder passwordEncoder, AuditService auditService) {
         this.userRepository = userRepository;
+        this.passwordEncoder = passwordEncoder;
         this.auditService = auditService;
+    }
+
+    @Transactional
+    public User registerUser(@Valid UserRegistrationDTO dto) {
+        String normalizedEmail = dto.getEmail().toLowerCase();
+        if (userRepository.findByEmail(normalizedEmail).isPresent()) {
+            throw new EmailAlreadyExistsException("Email already exists");
+        }
+
+        User user = new User();
+        user.setFullName(dto.getFullName());
+        user.setEmail(normalizedEmail);
+        user.setPasswordHash(passwordEncoder.encode(dto.getPassword()));
+        user.setRole(dto.getRole());
+        user.setStatus(AccountStatus.ACTIVE);
+        user.setFailedLogins(0);
+        user.setDepartment(dto.getDepartment());
+        user.setJobTitle(dto.getJobTitle());
+        return userRepository.save(user);
+    }
+
+    @Transactional
+    public User updateUserProfile(Long userId, @Valid UserProfileUpdateDTO dto) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        user.setFullName(dto.getFullName());
+        user.setDepartment(dto.getDepartment());
+        user.setJobTitle(dto.getJobTitle());
+        return userRepository.save(user);
     }
 
     @Transactional(readOnly = true)

@@ -7,7 +7,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
-import java.time.Instant;
+import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "audit_logs")
@@ -16,34 +16,47 @@ public class AuditLog {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false)
-    private Instant createdAt;
+    @Column(name = "created_at", nullable = false)
+    private LocalDateTime createdAt;
 
-    @Column(nullable = false, length = 160)
+    @Column(name = "actor", nullable = false, length = 160)
     private String actor;
 
-    @Column(nullable = false, length = 80)
+    @Column(name = "action", nullable = false, length = 80)
     private String action;
 
-    @Column(nullable = false, length = 80)
+    @Column(name = "entity_type", nullable = false, length = 80)
     private String entityType;
 
-    @Column(length = 80)
+    @Column(name = "entity_id", length = 80)
     private String entityId;
 
-    @Column(nullable = false, length = 2000)
+    @Column(name = "details", nullable = false, length = 2000)
     private String details;
+
+    public AuditLog() {
+    }
+
+    public AuditLog(String actor, String action, String entityType, String entityId, String details) {
+        this.actor = actor;
+        this.action = action;
+        this.entityType = entityType;
+        this.entityId = entityId;
+        this.details = details;
+    }
 
     @PrePersist
     void onCreate() {
-        createdAt = Instant.now();
+        if (createdAt == null) {
+            createdAt = LocalDateTime.now();
+        }
     }
 
     public Long getId() {
         return id;
     }
 
-    public Instant getCreatedAt() {
+    public LocalDateTime getCreatedAt() {
         return createdAt;
     }
 
@@ -51,39 +64,19 @@ public class AuditLog {
         return actor;
     }
 
-    public void setActor(String actor) {
-        this.actor = actor;
-    }
-
     public String getAction() {
         return action;
-    }
-
-    public void setAction(String action) {
-        this.action = action;
     }
 
     public String getEntityType() {
         return entityType;
     }
 
-    public void setEntityType(String entityType) {
-        this.entityType = entityType;
-    }
-
     public String getEntityId() {
         return entityId;
     }
 
-    public void setEntityId(String entityId) {
-        this.entityId = entityId;
-    }
-
     public String getDetails() {
         return details;
-    }
-
-    public void setDetails(String details) {
-        this.details = details;
     }
 }

@@ -5,13 +5,13 @@ services:
       MYSQL_DATABASE: pms
       MYSQL_USER: pms
       MYSQL_PASSWORD: pms
-      MYSQL_ROOT_PASSWORD: root
+      MYSQL_ROOT_PASSWORD: admin
     ports:
-      - "3306:3306"
+      - "3307:3306"
     volumes:
       - pms_mysql:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-ppms"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-upms", "-ppms"]
       interval: 10s
       timeout: 5s
       retries: 10
