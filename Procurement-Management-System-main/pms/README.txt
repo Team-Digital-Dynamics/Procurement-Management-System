@@ -40,3 +40,21 @@ Core workflow:
 8. Capture receipt with `POST /api/grns`.
 
 Audit logs are insert-only and exposed read-only to admins at `GET /api/audit-logs`.
+
+## SEC-2: Backup, Recovery and Hardening
+
+Daily MySQL backup:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\backup-mysql.ps1
+```
+
+Recovery from backup:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\restore-mysql.ps1 -BackupFile .\backups\pms_YYYYMMDD_HHMMSS.sql -CreateSafetyBackup
+```
+
+Full runbook and security review checklist:
+
+- `docs/SEC-2-backup-recovery-hardening.md`

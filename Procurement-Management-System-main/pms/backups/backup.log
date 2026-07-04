@@ -1,0 +1,7 @@
+[2026-07-04 15:46:59] [INFO] ===============================================
+[2026-07-04 15:46:59] [INFO] PMS Digital Dynamics - Automated S3 Backup
+[2026-07-04 15:46:59] [INFO] ===============================================
+[2026-07-04 15:46:59] [INFO] Started: 2026-07-04 15:46:59
+[2026-07-04 15:46:59] [INFO] Target: s3://pms-backups-dynamics
+[2026-07-04 15:46:59] [INFO] Step 1: Creating MySQL backup...
+[2026-07-04 15:47:01] [ERROR] ❌ Backup failed: failed to connect to the docker API at npipe:////./pipe/dockerDesktopLinuxEngine; check if the path is correct and if the daemon is running: open //./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified.
