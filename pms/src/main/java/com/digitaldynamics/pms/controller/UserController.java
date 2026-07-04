@@ -31,10 +31,15 @@ public class UserController {
         return userService.all();
     }
 
+    @GetMapping("/me")
+    UserResponse me(@AuthenticationPrincipal CurrentUser user) {
+        return userService.findProfile(user.id());
+    }
+
     @PutMapping("/{id}/roles")
     @PreAuthorize("hasRole('ADMIN')")
     UserResponse assign(@PathVariable Long id, @Valid @RequestBody AssignRolesRequest request,
-                        @AuthenticationPrincipal CurrentUser user) {
+            @AuthenticationPrincipal CurrentUser user) {
         return userService.assign(id, request, user.email());
     }
 

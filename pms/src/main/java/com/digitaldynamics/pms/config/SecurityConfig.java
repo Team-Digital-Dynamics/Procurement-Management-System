@@ -28,6 +28,8 @@ public class SecurityConfig {
                                 "/",
                                 "/index.html",
                                 "/*.html",
+                                "/error",
+                                "/error/**",
                                 "/css/**",
                                 "/js/**",
                                 "/images/**",
