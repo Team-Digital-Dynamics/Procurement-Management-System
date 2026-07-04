@@ -27,11 +27,11 @@ public class RequisitionItem {
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
-    @Column(name = "requisition_id", nullable = false)
+    @Column(name = "requisition_id", nullable = false, insertable = false, updatable = false)
     private Long requisitionId;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "requisition_id", insertable = false, updatable = false)
+    @JoinColumn(name = "requisition_id", nullable = false)
     private Requisition requisition;
 
     @Column(nullable = false, length = 240)
@@ -87,7 +87,7 @@ public class RequisitionItem {
     }
 
     public Long getRequisitionId() {
-        return requisitionId;
+        return requisition == null ? requisitionId : requisition.getId();
     }
 
     public void setRequisitionId(Long requisitionId) {

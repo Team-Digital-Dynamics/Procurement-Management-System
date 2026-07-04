@@ -40,3 +40,4 @@ Core workflow:
 8. Capture receipt with `POST /api/grns`.
 
 Audit logs are insert-only and exposed read-only to admins at `GET /api/audit-logs`.
+
