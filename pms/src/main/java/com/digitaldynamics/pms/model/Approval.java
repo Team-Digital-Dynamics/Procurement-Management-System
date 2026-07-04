@@ -21,7 +21,7 @@ public class Approval extends BaseEntity {
     @JoinColumn(name = "approver_id")
     private User approver;
 
-    @Column(nullable = false)
+    @Column(name = "approval_level", nullable = false)
     private int approvalLevel;
 
     @Enumerated(EnumType.STRING)
@@ -31,6 +31,7 @@ public class Approval extends BaseEntity {
     @Column(length = 1000)
     private String comments;
 
+    @Column(name = "decided_at")
     private Instant decidedAt;
 
     public Requisition getRequisition() {
