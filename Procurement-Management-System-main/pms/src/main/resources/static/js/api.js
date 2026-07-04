@@ -250,7 +250,7 @@
   }
 
   function formatRoles(roles) {
-    if (!Array.isArray(roles) || roles.length === 0) return "User";
+    if (!Array.isArray(roles) || roles.length === 0) return "Administrator";
 
     return roles.map(function (role) {
       return ROLE_LABELS[role] || formatStatus(role);

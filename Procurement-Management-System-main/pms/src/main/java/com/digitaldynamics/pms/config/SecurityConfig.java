@@ -33,6 +33,8 @@ public class SecurityConfig {
                                 "/images/**",
                                 "/favicon.ico",
                                 "/api/auth/**",
+                                "/api/init/**",
+                                "/api/debug/**",
                                 "/api/docs")
                         .permitAll()
                         .requestMatchers("/actuator/health/**", "/actuator/info", "/v3/api-docs/**", "/swagger-ui/**",
