@@ -3,22 +3,25 @@
   const USER_KEY = "pmsUser";
 
   const ROLE_LABELS = {
-    ADMIN: "System Administrator",
-    PROCUREMENT_OFFICER: "Procurement Officer",
-    REQUESTER: "Requester",
-    APPROVER_LEVEL_1: "Approver Level 1",
-    APPROVER_LEVEL_2: "Approver Level 2",
-    APPROVER_LEVEL_3: "Approver Level 3",
-    RECEIVING_CLERK: "Receiving Clerk"
-  };
+  ADMIN: "System Administrator",
+  PROCUREMENT_OFFICER: "Procurement Officer",
+  REQUESTER: "Requester",
+  APPROVER_LEVEL_1: "Approver Level 1",
+  APPROVER_LEVEL_2: "Approver Level 2",
+  APPROVER_LEVEL_3: "Approver Level 3",
+  RECEIVING_CLERK: "Receiving Clerk",
+  SUPPLIER: "Supplier"
+};
 
   const NAV_ITEMS = [
     { href: "/dashboard.html", label: "Dashboard", page: "dashboard", roles: "all" },
     { href: "/requisitions.html", label: "Requisitions", page: "requisitions", roles: "all" },
+    { href: "/my-requisitions.html", label: "My Requisitions", page: "my-requisitions", roles: ["REQUESTER", "ADMIN"] },
     { href: "/approvals.html", label: "Approvals", page: "approvals", roles: ["ADMIN", "APPROVER_LEVEL_1", "APPROVER_LEVEL_2", "APPROVER_LEVEL_3"] },
-    { href: "/suppliers.html", label: "Suppliers", page: "suppliers", roles: ["ADMIN", "PROCUREMENT_OFFICER"] },
-    { href: "/rfqs.html", label: "RFQs", page: "rfqs", roles: ["ADMIN", "PROCUREMENT_OFFICER"] },
-    { href: "/purchase-orders.html", label: "Purchase Orders", page: "purchase-orders", roles: "all" },
+   { href: "/suppliers.html", label: "Suppliers", page: "suppliers", roles: ["ADMIN", "PROCUREMENT_OFFICER"] },
+{ href: "/rfqs.html", label: "RFQs", page: "rfqs", roles: ["ADMIN", "PROCUREMENT_OFFICER"] },
+{ href: "/supplier-dashboard.html", label: "Supplier Portal", page: "supplier-dashboard", roles: ["ADMIN", "PROCUREMENT_OFFICER", "SUPPLIER"] },
+{ href: "/purchase-orders.html", label: "Purchase Orders", page: "purchase-orders", roles: ["ADMIN", "PROCUREMENT_OFFICER", "RECEIVING_CLERK"] },
     { href: "/reports.html", label: "Reports", page: "reports", roles: ["ADMIN", "PROCUREMENT_OFFICER"] },
     { href: "/ai-assistant.html", label: "AI Assistant", page: "ai-assistant", roles: "all" },
     { href: "/audit-logs.html", label: "Audit Logs", page: "audit-logs", roles: ["ADMIN"] },

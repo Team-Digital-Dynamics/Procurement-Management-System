@@ -10,6 +10,7 @@ import java.math.BigDecimal;
 @Entity
 @Table(name = "suppliers")
 public class Supplier extends BaseEntity {
+
     @Column(nullable = false, length = 160)
     private String name;
 
