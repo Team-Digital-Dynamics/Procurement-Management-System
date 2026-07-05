@@ -37,7 +37,8 @@ public class SecurityConfig {
                                     "/api/init/**",
                                     "/api/debug/**",
                                     "/api/docs",
-                                    "/api/mail/**")
+                                    "/api/mail/**",
+                                    "/api/audit/**")
                             .permitAll()
 
                         .requestMatchers("/actuator/health/**", "/actuator/info", "/v3/api-docs/**", "/swagger-ui/**",
