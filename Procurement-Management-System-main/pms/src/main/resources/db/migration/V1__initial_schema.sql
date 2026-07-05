@@ -1,6 +1,6 @@
 
-CREATE DATABASE pms;
-use pms;
+
+
 CREATE TABLE users (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     created_at DATETIME(6) NOT NULL,

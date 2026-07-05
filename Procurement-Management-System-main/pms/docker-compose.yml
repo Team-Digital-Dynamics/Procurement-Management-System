@@ -1,3 +1,4 @@
+
 services:
   mysql:
     image: mysql:8.4
@@ -28,6 +29,10 @@ services:
       SPRING_DATASOURCE_USERNAME: pms
       SPRING_DATASOURCE_PASSWORD: pms
       PMS_JWT_SECRET: replace-with-a-production-secret-at-least-32-bytes
+
+      MAIL_USERNAME: admindigitaldynamics@gmail.com
+      MAIL_PASSWORD: yycr wiwx zctr ksav
+
     ports:
       - "8080:8080"
 
