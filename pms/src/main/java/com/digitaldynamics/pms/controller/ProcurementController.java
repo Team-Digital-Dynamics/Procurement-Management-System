@@ -56,6 +56,12 @@ public class ProcurementController {
         return procurementService.createSupplier(request, user.email());
     }
 
+    @PutMapping("/suppliers/{id}")
+    @PreAuthorize("hasAnyRole('ADMIN','PROCUREMENT_OFFICER')")
+    SupplierResponse updateSupplier(@PathVariable Long id, @Valid @RequestBody SupplierRequest request) {
+        return procurementService.updateSupplier(id, request);
+    }
+
     @PutMapping("/suppliers/{id}/status")
     @PreAuthorize("hasAnyRole('ADMIN','PROCUREMENT_OFFICER')")
     SupplierResponse supplierStatus(@PathVariable Long id, @RequestParam SupplierStatus status,

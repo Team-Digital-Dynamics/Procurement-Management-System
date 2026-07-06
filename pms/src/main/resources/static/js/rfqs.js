@@ -317,6 +317,7 @@ function rfqsTable(rfqs, canManage) {
             <th>Action</th>
           </tr>
         </thead>
+
         <tbody>
           ${rfqs.map(function (rfq) {
             const canEvaluate = canManage && String(rfq.status || "").toUpperCase() === "OPEN";
@@ -329,10 +330,16 @@ function rfqsTable(rfqs, canManage) {
                 <td>${PMS.escapeHtml(PMS.formatDateTime(rfq.submissionDeadline))}</td>
                 <td>${PMS.statusBadge(rfq.status)}</td>
                 <td>
-                  ${canEvaluate
-                    ? `<button class="btn btn-primary" type="button" data-evaluate-rfq="${PMS.escapeHtml(rfq.id)}">Evaluate</button>`
-                    : `<span class="badge">No action</span>`
-                  }
+                  <div class="action-row">
+                    <a class="btn btn-soft" href="/rfq-detail.html?id=${PMS.escapeHtml(rfq.id)}">
+                      View RFQ
+                    </a>
+
+                    ${canEvaluate
+                      ? `<button class="btn btn-primary" type="button" data-evaluate-rfq="${PMS.escapeHtml(rfq.id)}">Evaluate</button>`
+                      : `<span class="badge">No action</span>`
+                    }
+                  </div>
                 </td>
               </tr>
             `;
@@ -345,6 +352,7 @@ function rfqsTable(rfqs, canManage) {
 
 async function createRfq(event) {
   event.preventDefault();
+
   const form = event.target;
   const data = PMS.formDataToObject(form);
 
@@ -368,6 +376,7 @@ async function createRfq(event) {
 
 async function submitQuotation(event) {
   event.preventDefault();
+
   const form = event.target;
   const data = PMS.formDataToObject(form);
 
@@ -402,6 +411,7 @@ async function evaluateRfq(id) {
 
 async function awardRfq(event) {
   event.preventDefault();
+
   const form = event.target;
   const data = PMS.formDataToObject(form);
 

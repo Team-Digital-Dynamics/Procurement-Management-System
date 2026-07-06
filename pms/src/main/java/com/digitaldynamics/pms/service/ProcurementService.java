@@ -7,6 +7,7 @@ import com.digitaldynamics.pms.dto.ProcurementDtos.GrnRequest;
 import com.digitaldynamics.pms.dto.ProcurementDtos.PurchaseOrderResponse;
 import com.digitaldynamics.pms.dto.ProcurementDtos.QuotationRequest;
 import com.digitaldynamics.pms.dto.ProcurementDtos.QuotationResponse;
+import com.digitaldynamics.pms.dto.ProcurementDtos.RequisitionItemResponse;
 import com.digitaldynamics.pms.dto.ProcurementDtos.RequisitionRequest;
 import com.digitaldynamics.pms.dto.ProcurementDtos.RequisitionResponse;
 import com.digitaldynamics.pms.dto.ProcurementDtos.RfqRequest;
@@ -83,18 +84,40 @@ public class ProcurementService {
 
     @Transactional
     public SupplierResponse createSupplier(SupplierRequest request, String actor) {
-        if (supplierRepository.existsByContactEmail(request.contactEmail().toLowerCase())) {
+        String email = request.contactEmail().toLowerCase();
+
+        if (supplierRepository.existsByContactEmail(email)) {
             throw new ApiException(HttpStatus.CONFLICT, "Supplier email already exists");
         }
+
         Supplier supplier = new Supplier();
         supplier.setName(request.name());
-        supplier.setContactEmail(request.contactEmail().toLowerCase());
-        supplier.setPhone(request.phone());
-        supplier.setTaxNumber(request.taxNumber());
+        supplier.setContactEmail(email);
+        supplier.setPerformanceScore(request.performanceScore());
+
         supplierRepository.save(supplier);
+<<<<<<< Updated upstream
         auditService.logEvent(actor, "CREATE_SUPPLIER", "Supplier", String.valueOf(supplier.getId()),
             "Supplier registered");
         return procurementMapper.toSupplierResponse(supplier);
+=======
+
+        auditService.record(actor, "CREATE_SUPPLIER", "Supplier", supplier.getId(), "Supplier registered");
+
+        return supplierResponse(supplier);
+    }
+
+    @Transactional
+    public SupplierResponse updateSupplier(Long id, SupplierRequest request) {
+        Supplier supplier = supplier(id);
+        String email = request.contactEmail().toLowerCase();
+
+        supplier.setName(request.name());
+        supplier.setContactEmail(email);
+        supplier.setPerformanceScore(request.performanceScore());
+
+        return supplierResponse(supplier);
+>>>>>>> Stashed changes
     }
 
     @Transactional
@@ -397,4 +420,59 @@ public class ProcurementService {
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Quotation not found"));
     }
 
+<<<<<<< Updated upstream
+=======
+    private SupplierResponse supplierResponse(Supplier supplier) {
+        return new SupplierResponse(
+                supplier.getId(),
+                supplier.getName(),
+                supplier.getContactEmail(),
+                supplier.getStatus(),
+                supplier.getPerformanceScore());
+    }
+
+    private RequisitionResponse requisitionResponse(Requisition requisition) {
+        List<RequisitionItemResponse> items = requisition.getItems()
+                .stream()
+                .map(item -> new RequisitionItemResponse(
+                        item.getId(),
+                        item.getDescription(),
+                        item.getQuantity(),
+                        item.getEstimatedUnitPrice(),
+                        item.getQuantity().multiply(item.getEstimatedUnitPrice())))
+                .toList();
+
+        return new RequisitionResponse(
+                requisition.getId(),
+                requisition.getTitle(),
+                requisition.getBusinessJustification(),
+                requisition.getStatus(),
+                requisition.getTotalAmount(),
+                requisition.getRequester().getEmail(),
+                items);
+    }
+
+    private ApprovalResponse approvalResponse(Approval approval) {
+        Requisition requisition = approval.getRequisition();
+        return new ApprovalResponse(approval.getId(), requisition.getId(), requisition.getTitle(),
+                requisition.getRequester().getEmail(), requisition.getTotalAmount(), approval.getApprovalLevel(),
+                approval.getApprover().getEmail(), approval.getDecision(), approval.getComments());
+    }
+
+    private RfqResponse rfqResponse(Rfq rfq) {
+        return new RfqResponse(rfq.getId(), rfq.getRfqNumber(), rfq.getRequisition().getId(),
+                rfq.getSubmissionDeadline(), rfq.getStatus());
+    }
+
+    private QuotationResponse quotationResponse(Quotation quotation) {
+        return new QuotationResponse(quotation.getId(), quotation.getRfq().getId(), quotation.getSupplier().getId(),
+                quotation.getTotalAmount(), quotation.getDeliveryDays(), quotation.getEvaluationScore(),
+                quotation.isWinning());
+    }
+
+    private PurchaseOrderResponse poResponse(PurchaseOrder po) {
+        return new PurchaseOrderResponse(po.getId(), po.getPoNumber(), po.getSupplier().getId(),
+                po.getTotalAmount(), po.getStatus().name());
+    }
+>>>>>>> Stashed changes
 }

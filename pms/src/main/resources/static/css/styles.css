@@ -958,7 +958,6 @@ tr:last-child td {
     height: 70px;
   }
 }
-
 .auth-shell {
   min-height: 100vh;
   padding: 32px 20px;
@@ -1669,3 +1668,4 @@ tr:last-child td {
     display: none;
   }
 }
+
