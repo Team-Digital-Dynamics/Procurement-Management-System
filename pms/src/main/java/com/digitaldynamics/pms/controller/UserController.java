@@ -24,7 +24,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping({"/api/v1/users", "/api/users"})
+@RequestMapping({ "/api/v1/users", "/api/users" })
 public class UserController {
     private final UserService userService;
 
@@ -46,26 +46,30 @@ public class UserController {
 
     @GetMapping
     @PreAuthorize("hasRole('ADMIN')")
-    List<com.digitaldynamics.pms.dto.UserDtos.UserResponse> all() {
+    public List<com.digitaldynamics.pms.dto.UserDtos.UserResponse> all() {
         return userService.all();
     }
 
     @GetMapping("/me")
-    UserResponse me(@AuthenticationPrincipal CurrentUser user) {
+    public com.digitaldynamics.pms.dto.UserDtos.UserResponse me(@AuthenticationPrincipal CurrentUser user) {
         return userService.findProfile(user.id());
     }
 
     @PutMapping("/{id}/roles")
     @PreAuthorize("hasRole('ADMIN')")
-    com.digitaldynamics.pms.dto.UserDtos.UserResponse assign(@PathVariable Long id,
-                                                              @Valid @RequestBody AssignRolesRequest request,
-                                                              @AuthenticationPrincipal CurrentUser user) {
+    public com.digitaldynamics.pms.dto.UserDtos.UserResponse assign(
+            @PathVariable Long id,
+            @Valid @RequestBody AssignRolesRequest request,
+            @AuthenticationPrincipal CurrentUser user) {
+
         return userService.assign(id, request, user.email());
     }
 
     @PutMapping("/me")
-    com.digitaldynamics.pms.dto.UserDtos.UserResponse profile(@Valid @RequestBody ProfileUpdateRequest request,
-                                                              @AuthenticationPrincipal CurrentUser user) {
+    public com.digitaldynamics.pms.dto.UserDtos.UserResponse profile(
+            @Valid @RequestBody ProfileUpdateRequest request,
+            @AuthenticationPrincipal CurrentUser user) {
+
         return userService.updateProfile(user.id(), request, user.email());
     }
 
@@ -82,10 +86,13 @@ public class UserController {
 
     private UserResponse toUserResponse(User user) {
         LinkedHashSet<String> roles = new LinkedHashSet<>();
+
         if (user.getRole() != null) {
             roles.add(user.getRole().name());
         }
+
         user.getRoles().forEach(role -> roles.add(role.name()));
+
         return new UserResponse(
                 user.getId(),
                 user.getEmail(),
@@ -95,7 +102,6 @@ public class UserController {
                 user.getJobTitle(),
                 user.getStatus(),
                 user.getFailedLogins(),
-                user.getCreatedDate()
-        );
+                user.getCreatedDate());
     }
 }

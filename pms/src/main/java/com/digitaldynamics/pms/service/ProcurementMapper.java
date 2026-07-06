@@ -3,6 +3,7 @@ package com.digitaldynamics.pms.service;
 import com.digitaldynamics.pms.dto.ProcurementDtos.ApprovalResponse;
 import com.digitaldynamics.pms.dto.ProcurementDtos.PurchaseOrderResponse;
 import com.digitaldynamics.pms.dto.ProcurementDtos.QuotationResponse;
+import com.digitaldynamics.pms.dto.ProcurementDtos.RequisitionItemResponse;
 import com.digitaldynamics.pms.dto.ProcurementDtos.RequisitionResponse;
 import com.digitaldynamics.pms.dto.ProcurementDtos.RfqResponse;
 import com.digitaldynamics.pms.dto.ProcurementDtos.SupplierResponse;
@@ -13,6 +14,7 @@ import com.digitaldynamics.pms.model.Requisition;
 import com.digitaldynamics.pms.model.Rfq;
 import com.digitaldynamics.pms.model.Supplier;
 import org.springframework.stereotype.Component;
+import java.util.List;
 
 @Component
 public class ProcurementMapper {
@@ -22,8 +24,24 @@ public class ProcurementMapper {
     }
 
     public RequisitionResponse toRequisitionResponse(Requisition requisition) {
-        return new RequisitionResponse(requisition.getId(), requisition.getTitle(), requisition.getStatus(),
-                requisition.getTotalAmount(), requisition.getRequester().getEmail());
+        List<RequisitionItemResponse> items = requisition.getItems()
+                .stream()
+                .map(item -> new RequisitionItemResponse(
+                        item.getId(),
+                        item.getDescription(),
+                        item.getQuantity(),
+                        item.getEstimatedUnitPrice(),
+                        item.getQuantity().multiply(item.getEstimatedUnitPrice())))
+                .toList();
+
+        return new RequisitionResponse(
+                requisition.getId(),
+                requisition.getTitle(),
+                requisition.getBusinessJustification(),
+                requisition.getStatus(),
+                requisition.getTotalAmount(),
+                requisition.getRequester().getEmail(),
+                items);
     }
 
     public ApprovalResponse toApprovalResponse(Approval approval) {
