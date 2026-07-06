@@ -7,26 +7,38 @@
     <link rel="stylesheet" href="/css/styles.css" />
   </head>
   <body>
-    <section class="auth-shell">
-      <div class="auth-card">
+    <main class="auth-shell">
+      <section class="auth-card">
         <div class="auth-brand-panel">
+          <div class="auth-logo-block">
+            <img
+              src="/images/logo.png"
+              alt="Digital Dynamics Logo"
+              class="auth-logo"
+            />
+          </div>
+
           <h1>Procurement Management System</h1>
+
           <div class="auth-feature-list">
             <div class="auth-feature-item">
-              <span class="feature-dot"></span
-              ><span>Structured procurement workflow</span>
+              <span class="feature-dot"></span>
+              <span>Structured procurement workflow</span>
             </div>
+
             <div class="auth-feature-item">
-              <span class="feature-dot"></span
-              ><span>Role-based access and approvals</span>
+              <span class="feature-dot"></span>
+              <span>Role-based access and approvals</span>
             </div>
+
             <div class="auth-feature-item">
-              <span class="feature-dot"></span
-              ><span>Supplier and RFQ management</span>
+              <span class="feature-dot"></span>
+              <span>Supplier and RFQ management</span>
             </div>
+
             <div class="auth-feature-item">
-              <span class="feature-dot"></span
-              ><span>Reports and audit visibility</span>
+              <span class="feature-dot"></span>
+              <span>Reports and audit visibility</span>
             </div>
           </div>
         </div>
@@ -44,17 +56,30 @@
 
               <div class="form-group">
                 <label for="email">Email Address</label>
-                <input id="email" type="email" required />
+                <input
+                  id="email"
+                  name="email"
+                  type="email"
+                  value="administrator@example.com"
+                  required
+                />
               </div>
 
               <div class="form-group">
                 <label for="password">Password</label>
-                <input id="password" type="password" required />
+                <input
+                  id="password"
+                  name="password"
+                  type="password"
+                  value="Password123!"
+                  required
+                />
               </div>
 
               <button class="btn btn-primary btn-full" type="submit">
                 Sign In
               </button>
+
               <p class="muted">
                 Forgot your password?
                 <button id="showForgotBtn" class="link-btn" type="button">
@@ -117,6 +142,7 @@
               </p>
             </form>
           </div>
+
           <div id="forgotPanel" class="hidden">
             <div class="auth-form-header">
               <p class="eyebrow">Password Recovery</p>
@@ -175,8 +201,8 @@
             © 2026 Digital Dynamics. All rights reserved.
           </p>
         </div>
-      </div>
-    </section>
+      </section>
+    </main>
 
     <script src="/js/api.js"></script>
     <script src="/js/auth.js"></script>

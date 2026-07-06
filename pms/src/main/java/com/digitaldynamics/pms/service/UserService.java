@@ -66,6 +66,11 @@ public class UserService {
         return userRepository.findAll().stream().map(this::toResponse).toList();
     }
 
+    @Transactional(readOnly = true)
+    public UserResponse findProfile(Long id) {
+        return toResponse(find(id));
+    }
+
     @Transactional
     public UserResponse assign(Long id, AssignRolesRequest request, String actor) {
         User user = find(id);
