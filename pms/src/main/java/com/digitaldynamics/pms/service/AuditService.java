@@ -5,8 +5,6 @@ import com.digitaldynamics.pms.repository.AuditLogRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-import com.digitaldynamics.pms.dto.AuthDtos.MessageResponse;
-import com.digitaldynamics.pms.dto.AuthDtos.ResetPasswordRequest;
 
 @Service
 public class AuditService {
@@ -17,13 +15,8 @@ public class AuditService {
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void record(String actor, String action, String entityType, Object entityId, String details) {
-        AuditLog log = new AuditLog();
-        log.setActor(actor == null ? "system" : actor);
-        log.setAction(action);
-        log.setEntityType(entityType);
-        log.setEntityId(entityId == null ? null : String.valueOf(entityId));
-        log.setDetails(details);
-        auditLogRepository.save(log);
+    public void logEvent(String actor, String action, String entityType, String entityId, String details) {
+        AuditLog auditLog = new AuditLog(actor, action, entityType, entityId, details);
+        auditLogRepository.save(auditLog);
     }
 }
