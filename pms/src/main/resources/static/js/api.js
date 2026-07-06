@@ -23,6 +23,7 @@
 { href: "/supplier-dashboard.html", label: "Supplier Portal", page: "supplier-dashboard", roles: ["ADMIN", "PROCUREMENT_OFFICER", "SUPPLIER"] },
 { href: "/purchase-orders.html", label: "Purchase Orders", page: "purchase-orders", roles: ["ADMIN", "PROCUREMENT_OFFICER", "RECEIVING_CLERK"] },
     { href: "/reports.html", label: "Reports", page: "reports", roles: ["ADMIN", "PROCUREMENT_OFFICER"] },
+    { href: "/profile.html", label: "My Profile", page: "profile", roles: "all" },
     { href: "/ai-assistant.html", label: "AI Assistant", page: "ai-assistant", roles: "all" },
     { href: "/audit-logs.html", label: "Audit Logs", page: "audit-logs", roles: ["ADMIN"] },
     { href: "/users.html", label: "Users", page: "users", roles: ["ADMIN"] }
@@ -173,13 +174,53 @@
         </aside>
 
         <div class="main-area">
-          <header class="topbar">
-            <div class="page-heading">
-              <h1>${escapeHtml(title)}</h1>
-              <p>${escapeHtml(subtitle)}</p>
-            </div>
-            <div class="role-chip">${escapeHtml(formatRoles(user.roles))}</div>
-          </header>
+         <header class="topbar app-topbar">
+  <div class="topbar-left">
+    <a class="topbar-logo" href="/dashboard.html" aria-label="Go to Dashboard">
+      <img src="/images/logo1.png" alt="Digital Dynamics Logo">
+    </a>
+
+    <div class="page-heading">
+      <h1>${escapeHtml(title)}</h1>
+      <p>${escapeHtml(subtitle)}</p>
+    </div>
+  </div>
+
+  <div class="topbar-right">
+    <form id="globalSearchForm" class="global-search-form">
+      <input
+        id="globalSearchInput"
+        type="search"
+        placeholder="Search pages..."
+        autocomplete="off"
+      >
+      <div id="globalSearchResults" class="global-search-results hidden"></div>
+    </form>
+
+    <div class="notification-wrap">
+      <button id="notificationBellBtn" class="topbar-icon-btn" type="button" aria-label="Notifications">
+        🔔
+        <span class="topbar-badge">0</span>
+      </button>
+    </div>
+
+    <div class="topbar-user-menu">
+      <button id="userMenuBtn" class="user-menu-btn" type="button">
+        <span class="user-avatar">${escapeHtml(getInitials(user.fullName || user.email))}</span>
+        <span class="user-menu-text">
+          <strong>${escapeHtml(user.fullName || user.email)}</strong>
+          <small>${escapeHtml(formatRoles(user.roles))}</small>
+        </span>
+      </button>
+
+      <div id="userMenuDropdown" class="user-menu-dropdown hidden">
+        <a href="/profile.html">My Profile</a>
+        <a href="/ai-assistant.html">AI Assistant</a>
+        <button type="button" id="topbarLogoutBtn">Logout</button>
+      </div>
+    </div>
+  </div>
+</header>
 
           <main id="content" class="view-container"></main>
         </div>
@@ -188,6 +229,7 @@
     `;
 
     document.getElementById("logoutBtn").addEventListener("click", logout);
+    attachTopbarEvents(allowedNav);
     attachScoutPopupEvents();
   }
 
@@ -409,6 +451,151 @@ function refreshScoutMessages() {
 
   messages.innerHTML = scoutPopupMessages.map(scoutMessageTemplate).join("");
   messages.scrollTop = messages.scrollHeight;
+}
+function getInitials(value) {
+  const text = String(value || "User").trim();
+
+  if (!text) return "U";
+
+  const parts = text.split(" ").filter(Boolean);
+
+  if (parts.length === 1) {
+    return parts[0].slice(0, 2).toUpperCase();
+  }
+
+  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+}
+
+function attachTopbarEvents(allowedNav) {
+  const searchForm = document.getElementById("globalSearchForm");
+  const searchInput = document.getElementById("globalSearchInput");
+  const searchResults = document.getElementById("globalSearchResults");
+  const notificationBellBtn = document.getElementById("notificationBellBtn");
+  const userMenuBtn = document.getElementById("userMenuBtn");
+  const userMenuDropdown = document.getElementById("userMenuDropdown");
+  const topbarLogoutBtn = document.getElementById("topbarLogoutBtn");
+
+  if (topbarLogoutBtn) {
+    topbarLogoutBtn.addEventListener("click", logout);
+  }
+
+  if (userMenuBtn && userMenuDropdown) {
+    userMenuBtn.addEventListener("click", function (event) {
+      event.stopPropagation();
+      userMenuDropdown.classList.toggle("hidden");
+
+      if (searchResults) {
+        searchResults.classList.add("hidden");
+      }
+    });
+  }
+
+  if (notificationBellBtn) {
+    notificationBellBtn.addEventListener("click", function (event) {
+      event.stopPropagation();
+      showNotificationPreview();
+    });
+  }
+
+  if (searchInput && searchResults) {
+    searchInput.addEventListener("input", function () {
+      renderGlobalSearchResults(searchInput.value, allowedNav || []);
+    });
+  }
+
+  if (searchForm) {
+    searchForm.addEventListener("submit", function (event) {
+      event.preventDefault();
+
+      const query = searchInput.value.trim().toLowerCase();
+
+      if (!query) return;
+
+      const match = (allowedNav || []).find(function (item) {
+        return item.label.toLowerCase().includes(query);
+      });
+
+      if (match) {
+        window.location.href = match.href;
+      }
+    });
+  }
+
+  document.addEventListener("click", function () {
+    if (userMenuDropdown) userMenuDropdown.classList.add("hidden");
+    if (searchResults) searchResults.classList.add("hidden");
+
+    const existingPreview = document.getElementById("notificationPreview");
+    if (existingPreview) existingPreview.remove();
+  });
+}
+
+function renderGlobalSearchResults(query, allowedNav) {
+  const searchResults = document.getElementById("globalSearchResults");
+
+  if (!searchResults) return;
+
+  const cleanQuery = String(query || "").trim().toLowerCase();
+
+  if (!cleanQuery) {
+    searchResults.classList.add("hidden");
+    searchResults.innerHTML = "";
+    return;
+  }
+
+  const matches = allowedNav.filter(function (item) {
+    return item.label.toLowerCase().includes(cleanQuery);
+  });
+
+  if (matches.length === 0) {
+    searchResults.innerHTML = `
+      <div class="global-search-empty">
+        No matching pages found.
+      </div>
+    `;
+    searchResults.classList.remove("hidden");
+    return;
+  }
+
+  searchResults.innerHTML = matches.map(function (item) {
+    return `
+      <a href="${escapeHtml(item.href)}">
+        ${escapeHtml(item.label)}
+      </a>
+    `;
+  }).join("");
+
+  searchResults.classList.remove("hidden");
+}
+
+function showNotificationPreview() {
+  const oldPreview = document.getElementById("notificationPreview");
+
+  if (oldPreview) {
+    oldPreview.remove();
+    return;
+  }
+
+  const button = document.getElementById("notificationBellBtn");
+
+  if (!button) return;
+
+  const preview = document.createElement("div");
+  preview.id = "notificationPreview";
+  preview.className = "notification-preview";
+
+  preview.innerHTML = `
+    <div class="notification-preview-header">
+      <strong>Notifications</strong>
+      <span>0 unread</span>
+    </div>
+
+    <div class="notification-preview-body">
+      <p>No unread notifications.</p>
+    </div>
+  `;
+
+  button.parentElement.appendChild(preview);
 }
   window.PMS = {
     ROLE_LABELS,

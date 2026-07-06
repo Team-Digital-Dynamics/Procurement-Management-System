@@ -50,6 +50,11 @@ public class UserController {
         return userService.all();
     }
 
+    @GetMapping("/me")
+    UserResponse me(@AuthenticationPrincipal CurrentUser user) {
+        return userService.findProfile(user.id());
+    }
+
     @PutMapping("/{id}/roles")
     @PreAuthorize("hasRole('ADMIN')")
     com.digitaldynamics.pms.dto.UserDtos.UserResponse assign(@PathVariable Long id,
