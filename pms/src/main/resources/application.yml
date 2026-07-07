@@ -7,8 +7,17 @@ spring:
     enabled: true
     locations: classpath:db/migration
   mail:
-    host: ${PMS_MAIL_HOST:localhost}
-    port: ${PMS_MAIL_PORT:1025}
+    host: ${PMS_MAIL_HOST:${MAIL_HOST:smtp.gmail.com}}
+    port: ${PMS_MAIL_PORT:${MAIL_PORT:587}}
+    protocol: ${PMS_MAIL_PROTOCOL:${MAIL_PROTOCOL:smtp}}
+    username: ${PMS_MAIL_USERNAME:${MAIL_USERNAME:}}
+    password: ${PMS_MAIL_PASSWORD:${MAIL_PASSWORD:}}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
 
 management:
   health:
@@ -39,9 +48,9 @@ spring:
     activate:
       on-profile: dev
   datasource:
-    url: ${JDBC_DATABASE_URL}
-    username: ${JDBC_DATABASE_USERNAME}
-    password: ${JDBC_DATABASE_PASSWORD}
+    url: ${JDBC_DATABASE_URL:${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3306/pms?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC}}
+    username: ${JDBC_DATABASE_USERNAME:${SPRING_DATASOURCE_USERNAME:pms}}
+    password: ${JDBC_DATABASE_PASSWORD:${SPRING_DATASOURCE_PASSWORD:pms}}
     hikari:
       connection-timeout: 20000
       maximum-pool-size: 10
@@ -65,9 +74,9 @@ spring:
     activate:
       on-profile: prod
   datasource:
-    url: ${JDBC_DATABASE_URL}
-    username: ${JDBC_DATABASE_USERNAME}
-    password: ${JDBC_DATABASE_PASSWORD}
+    url: ${JDBC_DATABASE_URL:${SPRING_DATASOURCE_URL}}
+    username: ${JDBC_DATABASE_USERNAME:${SPRING_DATASOURCE_USERNAME}}
+    password: ${JDBC_DATABASE_PASSWORD:${SPRING_DATASOURCE_PASSWORD}}
     hikari:
       connection-timeout: 20000
       maximum-pool-size: 10

@@ -21,12 +21,18 @@ public class NotificationService {
     }
 
     public void dispatchAlert(Long recipientId, String recipientEmail, String type, String message) {
-        Notification notification = new Notification();
-        notification.setRecipientId(recipientId);
-        notification.setType(type);
-        notification.setMessage(message);
-        notification.setReadStatus(false);
-        notificationRepository.save(notification);
+        dispatchAlert(recipientId, recipientEmail, type, message, true);
+    }
+
+    public void dispatchAlert(Long recipientId, String recipientEmail, String type, String message, boolean persistRecord) {
+        if (persistRecord) {
+            Notification notification = new Notification();
+            notification.setRecipientId(recipientId);
+            notification.setType(type);
+            notification.setMessage(message);
+            notification.setReadStatus(false);
+            notificationRepository.save(notification);
+        }
 
         try {
             SimpleMailMessage email = new SimpleMailMessage();

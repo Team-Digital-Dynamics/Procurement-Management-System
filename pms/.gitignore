@@ -34,3 +34,7 @@ build/
 
 # Local compose override for development "The one in github stays untouched, but we can override it locally for our own development purposes"
 docker-compose.override.yml
+
+# Local environment secrets
+.env
+.env.*

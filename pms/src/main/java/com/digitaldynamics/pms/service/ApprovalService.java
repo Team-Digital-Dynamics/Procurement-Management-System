@@ -1,14 +1,16 @@
 package com.digitaldynamics.pms.service;
 
 import com.digitaldynamics.pms.exception.ResourceNotFoundException;
-import com.digitaldynamics.pms.model.ApprovalRecord;
+import com.digitaldynamics.pms.model.Approval;
+import com.digitaldynamics.pms.model.ApprovalDecision;
 import com.digitaldynamics.pms.model.Requisition;
 import com.digitaldynamics.pms.model.RequisitionStatus;
 import com.digitaldynamics.pms.model.User;
-import com.digitaldynamics.pms.repository.ApprovalRecordRepository;
+import com.digitaldynamics.pms.repository.ApprovalRepository;
 import com.digitaldynamics.pms.repository.RequisitionRepository;
+import com.digitaldynamics.pms.repository.UserRepository;
 import com.digitaldynamics.pms.security.SegregationOfDutiesGuard;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.Locale;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -16,20 +18,20 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class ApprovalService {
     private final RequisitionRepository requisitionRepository;
-    private final ApprovalRecordRepository approvalRecordRepository;
+    private final ApprovalRepository approvalRepository;
+    private final UserRepository userRepository;
     private final SegregationOfDutiesGuard segregationOfDutiesGuard;
-    private final AuditService auditService;
     private final NotificationService notificationService;
 
     public ApprovalService(RequisitionRepository requisitionRepository,
-            ApprovalRecordRepository approvalRecordRepository,
+            ApprovalRepository approvalRepository,
+            UserRepository userRepository,
             SegregationOfDutiesGuard segregationOfDutiesGuard,
-            AuditService auditService,
             NotificationService notificationService) {
         this.requisitionRepository = requisitionRepository;
-        this.approvalRecordRepository = approvalRecordRepository;
+        this.approvalRepository = approvalRepository;
+        this.userRepository = userRepository;
         this.segregationOfDutiesGuard = segregationOfDutiesGuard;
-        this.auditService = auditService;
         this.notificationService = notificationService;
     }
 
@@ -38,34 +40,32 @@ public class ApprovalService {
         Requisition requisition = requisitionRepository.findById(requisitionId)
                 .orElseThrow(() -> new ResourceNotFoundException("Requisition not found: " + requisitionId));
 
+        User approver = userRepository.findById(approverId)
+            .orElseThrow(() -> new ResourceNotFoundException("Approver not found: " + approverId));
+
         segregationOfDutiesGuard.verifyApprovalEligibility(approverId, requisition.getRequesterId());
 
-        ApprovalRecord approvalRecord = new ApprovalRecord();
-        approvalRecord.setRequisitionId(requisitionId);
-        approvalRecord.setApproverId(approverId);
-        approvalRecord.setApprovalLevel(1);
-        approvalRecord.setDecision(normalizeDecision(decision));
-        approvalRecord.setComments(comments);
-        approvalRecord.setDecidedAt(LocalDateTime.now());
+        Approval approval = new Approval();
+        approval.setRequisition(requisition);
+        approval.setApprover(approver);
+        approval.setApprovalLevel(1);
+        approval.setDecision(ApprovalDecision.valueOf(normalizeDecision(decision)));
+        approval.setComments(comments);
+        approval.setDecidedAt(Instant.now());
 
-        RequisitionStatus nextStatus = toRequisitionStatus(approvalRecord.getDecision());
+        RequisitionStatus nextStatus = toRequisitionStatus(approval.getDecision().name());
         requisition.setStatus(nextStatus);
 
-        approvalRecordRepository.save(approvalRecord);
+        approvalRepository.save(approval);
         requisitionRepository.save(requisition);
-
-        auditService.logEvent(String.valueOf(approverId), "PROCESS_APPROVAL", "Requisition",
-                String.valueOf(requisitionId),
-                "Decision=" + approvalRecord.getDecision() + "; Comments=" +
-                        (comments == null ? "" : comments));
 
         User requester = requisition.getRequester();
         if (requester != null) {
             notificationService.dispatchAlert(
                     requester.getId(),
                     requester.getEmail(),
-                    "REQUISITION_" + approvalRecord.getDecision(),
-                    "Your requisition " + requisitionId + " has been " + approvalRecord.getDecision() + "."
+                    "REQUISITION_" + approval.getDecision().name(),
+                    "Your requisition " + requisitionId + " has been " + approval.getDecision().name() + "."
             );
         }
     }
