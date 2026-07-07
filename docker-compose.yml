@@ -1,0 +1,40 @@
+
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: pms
+      MYSQL_USER: pms
+      MYSQL_PASSWORD: pms
+      MYSQL_ROOT_PASSWORD: Password1238
+    ports:
+      - "3308:3306"
+    volumes:
+      - pms_mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-ppms"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/pms?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      SPRING_DATASOURCE_USERNAME: pms
+      SPRING_DATASOURCE_PASSWORD: pms
+      PMS_JWT_SECRET: replace-with-a-production-secret-at-least-32-bytes
+
+      MAIL_USERNAME: admindigitaldynamics@gmail.com
+      MAIL_PASSWORD: yycr wiwx zctr ksav
+
+    ports:
+      - "8080:8080"
+
+volumes:
+  pms_mysql:
