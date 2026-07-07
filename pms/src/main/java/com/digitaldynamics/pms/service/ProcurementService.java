@@ -454,7 +454,7 @@ public class ProcurementService {
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Purchase order not found"));
 
         GoodsReceivedNote grn = new GoodsReceivedNote();
-        grn.setPurchaseOrder(po);
+        grn.setPurchaseOrderId(po.getId());
         grn.setReceivedBy(actor);
         grn.setReceivedValue(request.receivedValue());
         grn.setNotes(request.notes());

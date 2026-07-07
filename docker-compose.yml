@@ -33,7 +33,7 @@ services:
       PMS_MAIL_PORT: 587
       PMS_MAIL_PROTOCOL: smtp
       PMS_MAIL_USERNAME: escgroupin4@gmail.com
-      PMS_MAIL_PASSWORD: xjkdfumgikfuvwhu
+      PMS_MAIL_PASSWORD: zwfklulnkhjjjcwr
 
     ports:
       - "8080:8080"
