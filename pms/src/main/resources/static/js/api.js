@@ -81,10 +81,20 @@
     localStorage.removeItem(USER_KEY);
   }
 
-  function logout() {
-    clearSession();
-    window.location.href = "/index.html";
-  }
+  async function logout() {
+  const confirmed = await confirmAction({
+    title: "Confirm Logout",
+    message: "Are you sure you want to logout?",
+    confirmText: "Logout",
+    cancelText: "Cancel",
+    danger: true
+  });
+
+  if (!confirmed) return;
+
+  clearSession();
+  window.location.href = "/index.html";
+}
 
   function requireAuth() {
     if (!getToken() || !getUser()) {
