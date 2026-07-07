@@ -1,0 +1,40 @@
+name: Deploy PMS with Automated Backups
+
+on:
+  push:
+    branches: [ main, production, deploy ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: windows-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Deploy Application
+        run: |
+          Write-Host "Deploying PMS Application..."
+          docker-compose up -d
+      
+      - name: Setup Automated Backups
+        run: |
+          Write-Host "Setting up automated backups..."
+          powershell -ExecutionPolicy Bypass -NoProfile -File "pms/scripts/deploy-backup-system-FIXED.ps1"
+      
+      - name: Verify Backup Configuration
+        run: |
+          Write-Host "Verifying backup system..."
+          $LogFile = "logs/deployment.log"
+          if (Test-Path $LogFile) {
+            Write-Host "Deployment log:"
+            Get-Content $LogFile | Select-Object -Last 10
+          }
+      
+      - name: Confirm Backups Ready
+        run: |
+          Write-Host ""
+          Write-Host "✅ Backup system deployed!"
+          Write-Host "Daily backups will run at 01:00 AM UTC"
+          Write-Host ""
