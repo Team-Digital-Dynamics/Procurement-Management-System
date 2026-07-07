@@ -1,23 +1,18 @@
 package com.digitaldynamics.pms.integration;
 
-import org.springframework.mail.SimpleMailMessage;
-import org.springframework.mail.javamail.JavaMailSender;
+import com.digitaldynamics.pms.service.EmailService;
 import org.springframework.stereotype.Component;
 
 @Component
 public class MailNotificationGateway implements NotificationGateway {
-    private final JavaMailSender mailSender;
+    private final EmailService emailService;
 
-    public MailNotificationGateway(JavaMailSender mailSender) {
-        this.mailSender = mailSender;
+    public MailNotificationGateway(EmailService emailService) {
+        this.emailService = emailService;
     }
 
     @Override
     public void send(String recipient, String subject, String body) {
-        SimpleMailMessage message = new SimpleMailMessage();
-        message.setTo(recipient);
-        message.setSubject(subject);
-        message.setText(body);
-        mailSender.send(message);
+        emailService.send(recipient, subject, body);
     }
 }
