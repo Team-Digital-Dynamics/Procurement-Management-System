@@ -143,12 +143,25 @@
     }
 
     if (!response.ok) {
-      if (response.status === 401 || response.status === 403) {
-        throw new Error("You are not allowed to perform this action with the current signed-in role.");
-      }
+  const requestPath = String(path || "");
 
-      throw new Error(body?.message || response.statusText || "Request failed");
-    }
+  if (
+    (response.status === 401 || response.status === 403) &&
+    requestPath.includes("/api/auth/login")
+  ) {
+    throw new Error("Incorrect email address or password. Please try again.");
+  }
+
+  if (response.status === 401) {
+    throw new Error("Your session has expired. Please sign in again.");
+  }
+
+  if (response.status === 403) {
+    throw new Error("You are not allowed to perform this action with the current signed-in role.");
+  }
+
+  throw new Error(body?.message || response.statusText || "Request failed");
+}
 
     return body;
   }
