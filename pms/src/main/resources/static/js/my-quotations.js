@@ -35,30 +35,13 @@ async function loadMyQuotationsPage() {
 }
 
 async function loadQuotationRecords() {
-  const possibleEndpoints = [
-    "/api/quotations/my",
-    "/api/v1/quotations/my",
-    "/api/supplier/quotations",
-    "/api/v1/supplier/quotations",
-    "/api/quotations",
-    "/api/v1/quotations"
-  ];
+  const response = await PMS.getJson("/api/quotations/my");
+  const list = extractList(response);
 
-  for (const endpoint of possibleEndpoints) {
-    try {
-      const response = await PMS.getJson(endpoint);
-      const list = extractList(response);
-
-      if (list.length > 0) {
-        return list.map(normaliseQuotationRecord);
-      }
-    } catch (error) {
-      // Try next endpoint.
-    }
-  }
-
-  throw new Error("No quotation endpoint returned data.");
+  return list.map(normaliseQuotationRecord);
 }
+
+
 
 function extractList(response) {
   if (Array.isArray(response)) return response;
