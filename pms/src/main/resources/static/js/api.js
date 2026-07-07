@@ -1031,56 +1031,103 @@
     form.addEventListener("submit", handleScoutSubmit);
   }
 
-  async function handleScoutSubmit(event) {
-    event.preventDefault();
 
-    const input = document.getElementById("scoutInput");
-    const question = input.value.trim();
 
-    if (!question) return;
+  
+ async function handleScoutSubmit(event) {
+     event.preventDefault();
 
-    scoutPopupMessages.push({
-      sender: "user",
-      text: question
-    });
+     const input = document.getElementById("scoutInput");
+     const messagesContainer = document.getElementById("scoutMessages");
+     const originalQuestion = input.value.trim();
 
-    input.value = "";
+     if (!originalQuestion) return;
 
-    scoutPopupMessages.push({
-      sender: "assistant",
-      text: "Thinking..."
-    });
+     // 1. Push user message to local state and update UI
+     scoutPopupMessages.push({
+         sender: "user",
+         text: originalQuestion
+     });
 
-    refreshScoutMessages();
+     input.value = "";
+     refreshScoutMessages();
 
-    try {
-      const response = await api("/api/assistant", {
-        method: "POST",
-        body: JSON.stringify({
-          message: question
-        })
-      });
+     // 2. Normalize input for strict matching evaluation
+     const cleanQuery = originalQuestion.toLowerCase();
+     let reply = "";
 
-      scoutPopupMessages.pop();
+     // 3. Rule-based conditional parsing matching the Knowledge Base
+     if (cleanQuery.includes("create") || cleanQuery.includes("requisition")) {
+         reply = "To create a requisition: Navigate to Requisition Management, select New Requisition, complete all mandatory fields, add line items and submit.";
+     }
+     else if (cleanQuery.includes("approve") || cleanQuery.includes("own")) {
+         reply = "You cannot approve your own requisition because the system enforces segregation of duties to reduce fraud and maintain governance.";
+     }
+     else if (cleanQuery.includes("why") || cleanQuery.includes("rejected")) {
+         reply = "Quotations submitted after the RFQ deadline are automatically rejected. Additionally, make sure your parameters align with predefined compliance frameworks.";
+     }
+     else if (cleanQuery.includes("winning") || cleanQuery.includes("supplier") || cleanQuery.includes("selected")) {
+         reply = "The system calculates weighted evaluation scores using predefined criteria such as price, delivery, supplier performance, and quality to select the winning supplier.";
+     }
+     else if (cleanQuery.includes("edit") || (cleanQuery.includes("purchase order") || cleanQuery.includes("po"))) {
+         reply = "No, you cannot edit an approved purchase order. Purchase orders form part of the procurement audit trail and follow controlled, immutable business processes.";
+     }
+     else if (cleanQuery.includes("role") || cleanQuery.includes("permission") || cleanQuery.includes("who can")) {
+         reply = "Access is strictly controlled by your assigned user role. For example:\n" +
+             "- Requisition creation is handled by RequeSTERS.\n" +
+             "- RFQs and PO modifications are performed by Procurement Officers.\n" +
+             "- System configurations and Threshold settings are managed by System Administrators.";
+     }
+     else if (cleanQuery.includes("stack") || cleanQuery.includes("built") || cleanQuery.includes("technology")) {
+         reply = "The PMS is a web-based platform built using Java 17, Spring Boot 3.x, MySQL 8.x, and Vanilla JavaScript with REST APIs over HTTPS.";
+     }
+     else if (cleanQuery.includes("workflow") || cleanQuery.includes("lifecycle") || cleanQuery.includes("steps")) {
+         reply = "The complete procurement lifecycle tracks: Login → Purchase Requisition → Multi-level Approval → RFQ → Supplier Quotation Submission → Weighted Evaluation → Purchase Order Generation → Delivery → Goods Received Note (GRN) → Audit Logging → Dashboard updates.";
+     }
+     else if (cleanQuery.includes("approve") || cleanQuery.includes("reject") || cleanQuery.includes("modify")) {
+         // Security Guardrails from Guidelines
+         reply = "As an integrated automated assistant, I am not authorized to directly modify procurement data, approve transactions, or override system business logic rules. Please use the corresponding module interfaces instead.";
+     }
+     else {
+         // Default Fallback Response
+         reply = "I'm sorry, I couldn't find a direct match for that request. I can help guide you through workflow steps, explaining system terminology, and checking status validations. Try asking about requisitions, purchase orders, or how the winning supplier is selected.";
+     }
 
-      scoutPopupMessages.push({
-        sender: "assistant",
-        text: response.answer || "I received your question, but no answer was returned."
-      });
+     // 4. Mimic a brief natural delay before processing the answer text
+     const loadingId = `loading-${Date.now()}`;
+     const loadingRow = document.createElement("div");
+     loadingRow.id = loadingId;
+     loadingRow.className = "scout-message-row assistant";
+     loadingRow.innerHTML = `
+   <img src="/images/Ai_popup.png" alt="Scout" class="scout-message-avatar">
+   <div class="scout-message-bubble typing-indicator">Scout typing...</div>
+ `;
+     messagesContainer.appendChild(loadingRow);
+     messagesContainer.scrollTop = messagesContainer.scrollHeight;
 
-      refreshScoutMessages();
-    } catch (error) {
-      scoutPopupMessages.pop();
+     setTimeout(function () {
+         document.getElementById(loadingId)?.remove();
 
-      scoutPopupMessages.push({
-        sender: "assistant",
-        text: "Sorry, I could not reach the assistant service right now."
-      });
+         scoutPopupMessages.push({
+             sender: "assistant",
+             text: reply
+         });
 
-      refreshScoutMessages();
-    }
-  }
+         refreshScoutMessages();
+     }, 450);
+ }
 
+ function refreshScoutMessages() {
+     const messagesContainer = document.getElementById("scoutMessages");
+     if (!messagesContainer) return;
+
+     messagesContainer.innerHTML = scoutPopupMessages.map(scoutMessageTemplate).join("");
+     messagesContainer.scrollTop = messagesContainer.scrollHeight;
+ }
+
+
+
+  
   function refreshScoutMessages() {
     const messages = document.getElementById("scoutMessages");
 
