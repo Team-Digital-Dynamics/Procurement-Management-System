@@ -1,3 +1,315 @@
+let budgetRecords = [];
+
+document.addEventListener("DOMContentLoaded", function () {
+  PMS.renderLayout(
+    "budget-dashboard",
+    "Budget Dashboard",
+    "Track budget allocation, actual procurement spend and remaining balances."
+  );
+
+  renderBudgetDashboardPage();
+});
+
+function renderBudgetDashboardPage() {
+  if (!PMS.hasAnyRole(["ADMIN", "ADMINISTRATOR", "PROCUREMENT_OFFICER"])) {
+    PMS.setContent(`
+      <section class="view-section">
+        ${PMS.message("error", "You do not have permission to access the budget dashboard.")}
+      </section>
+    `);
+    return;
+  }
+
+  budgetRecords = getDemoBudgetRecords().map(enrichBudgetRecord);
+
+  PMS.setContent(`
+    <section class="view-section">
+      <div class="section-header">
+        <div>
+          <h2>Budget Dashboard</h2>
+          <p>Compare department budgets against actual procurement spend.</p>
+        </div>
+
+        <div class="page-actions">
+          <button id="refreshBudgetDashboardBtn" class="btn btn-soft" type="button">
+            Refresh
+          </button>
+
+          <button id="exportBudgetDashboardBtn" class="btn btn-primary" type="button">
+            Export CSV
+          </button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="section-header">
+          <div>
+            <h2>Filters</h2>
+            <p>Filter the dashboard by department or period.</p>
+          </div>
+        </div>
+
+        <div class="form-grid">
+          <label>
+            Department
+            <select id="budgetDepartmentFilter">
+              <option value="ALL">All Departments</option>
+              ${getUniqueValues(budgetRecords, "department").map(function (department) {
+                return `<option value="${PMS.escapeHtml(department)}">${PMS.escapeHtml(department)}</option>`;
+              }).join("")}
+            </select>
+          </label>
+
+          <label>
+            Period
+            <select id="budgetPeriodFilter">
+              <option value="ALL">All Periods</option>
+              ${getUniqueValues(budgetRecords, "period").map(function (period) {
+                return `<option value="${PMS.escapeHtml(period)}">${PMS.escapeHtml(period)}</option>`;
+              }).join("")}
+            </select>
+          </label>
+        </div>
+      </div>
+
+      <div id="budgetSummaryArea"></div>
+
+      <div class="card">
+        <div class="section-header">
+          <div>
+            <h2>Budget Records</h2>
+            <p>Detailed budget records for departments and procurement categories.</p>
+          </div>
+        </div>
+
+        <div id="budgetRecordsTable"></div>
+      </div>
+
+      <div class="card">
+        <div class="section-header">
+          <div>
+            <h2>Department Summary</h2>
+            <p>Budget usage grouped by department.</p>
+          </div>
+        </div>
+
+        <div id="budgetDepartmentTable"></div>
+      </div>
+    </section>
+  `);
+
+  renderBudgetDashboardData();
+  attachBudgetDashboardEvents();
+}
+
+function attachBudgetDashboardEvents() {
+  const departmentFilter = document.getElementById("budgetDepartmentFilter");
+  const periodFilter = document.getElementById("budgetPeriodFilter");
+  const refreshBtn = document.getElementById("refreshBudgetDashboardBtn");
+  const exportBtn = document.getElementById("exportBudgetDashboardBtn");
+
+  if (departmentFilter) {
+    departmentFilter.addEventListener("change", renderBudgetDashboardData);
+  }
+
+  if (periodFilter) {
+    periodFilter.addEventListener("change", renderBudgetDashboardData);
+  }
+
+  if (refreshBtn) {
+    refreshBtn.addEventListener("click", function () {
+      PMS.showToast("info", "Refreshing budget dashboard...");
+      budgetRecords = getDemoBudgetRecords().map(enrichBudgetRecord);
+      renderBudgetDashboardData();
+    });
+  }
+
+  if (exportBtn) {
+    exportBtn.addEventListener("click", exportBudgetCsv);
+  }
+}
+
+function renderBudgetDashboardData() {
+  const selectedDepartment = getFilterValue("budgetDepartmentFilter", "ALL");
+  const selectedPeriod = getFilterValue("budgetPeriodFilter", "ALL");
+
+  const filteredRecords = getFilteredBudgetRecords(selectedDepartment, selectedPeriod).map(enrichBudgetRecord);
+
+  renderBudgetSummary(filteredRecords);
+  renderBudgetRecordsTable(filteredRecords);
+  renderBudgetDepartmentTable(filteredRecords);
+}
+
+function renderBudgetSummary(records) {
+  const summaryArea = document.getElementById("budgetSummaryArea");
+
+  if (!summaryArea) return;
+
+  const totalBudget = records.reduce(function (sum, item) {
+    return sum + Number(item.budgetAmount || 0);
+  }, 0);
+
+  const totalActual = records.reduce(function (sum, item) {
+    return sum + Number(item.actualAmount || 0);
+  }, 0);
+
+  const remaining = totalBudget - totalActual;
+  const usagePercentage = totalBudget > 0 ? (totalActual / totalBudget) * 100 : 0;
+
+  const overBudgetCount = records.filter(function (item) {
+    return item.budgetStatus === "OVER_BUDGET" || item.budgetStatus === "NO_BUDGET";
+  }).length;
+
+  summaryArea.innerHTML = `
+    <div class="grid-4">
+      <article class="stat-card">
+        <div class="label">Total Budget</div>
+        <div class="value">${PMS.formatCurrency(totalBudget)}</div>
+      </article>
+
+      <article class="stat-card">
+        <div class="label">Actual Spend</div>
+        <div class="value">${PMS.formatCurrency(totalActual)}</div>
+      </article>
+
+      <article class="stat-card">
+        <div class="label">Remaining</div>
+        <div class="value">${PMS.formatCurrency(remaining)}</div>
+      </article>
+
+      <article class="stat-card">
+        <div class="label">Budget Health</div>
+        <div class="value">${PMS.escapeHtml(getBudgetHealthLabel(usagePercentage, overBudgetCount))}</div>
+      </article>
+    </div>
+  `;
+}
+
+function renderBudgetRecordsTable(records) {
+  PMS.renderDataTable({
+    container: "budgetRecordsTable",
+    title: "Budget Records",
+    rows: records,
+    pageSize: 10,
+    searchPlaceholder: "Filter budget records...",
+    emptyTitle: "No budget records found",
+    emptyText: "There are no budget records for the selected filters.",
+    columns: [
+      {
+        label: "Department",
+        key: "department"
+      },
+      {
+        label: "Category",
+        key: "category"
+      },
+      {
+        label: "Period",
+        key: "period"
+      },
+      {
+        label: "Owner",
+        key: "owner"
+      },
+      {
+        label: "Budget",
+        key: "budgetAmount",
+        render: function (item) {
+          return PMS.formatCurrency(item.budgetAmount);
+        }
+      },
+      {
+        label: "Actual Spend",
+        key: "actualAmount",
+        render: function (item) {
+          return PMS.formatCurrency(item.actualAmount);
+        }
+      },
+      {
+        label: "Remaining",
+        key: "remainingAmount",
+        render: function (item) {
+          return PMS.formatCurrency(item.remainingAmount);
+        }
+      },
+      {
+        label: "Usage",
+        key: "usagePercentage",
+        render: function (item) {
+          return `${Number(item.usagePercentage || 0).toFixed(1)}%`;
+        }
+      },
+      {
+        label: "Status",
+        key: "budgetStatus",
+        render: function (item) {
+          return budgetStatusBadge(item.budgetStatus);
+        }
+      }
+    ]
+  });
+}
+
+function renderBudgetDepartmentTable(records) {
+  const groupedRecords = groupBudget(records, "department");
+
+  PMS.renderDataTable({
+    container: "budgetDepartmentTable",
+    title: "Department Summary",
+    rows: groupedRecords,
+    pageSize: 10,
+    searchPlaceholder: "Filter departments...",
+    emptyTitle: "No department summary found",
+    emptyText: "There is no department summary for the selected filters.",
+    columns: [
+      {
+        label: "Department",
+        key: "name"
+      },
+      {
+        label: "Records",
+        key: "count"
+      },
+      {
+        label: "Budget",
+        key: "budget",
+        render: function (item) {
+          return PMS.formatCurrency(item.budget);
+        }
+      },
+      {
+        label: "Actual Spend",
+        key: "actual",
+        render: function (item) {
+          return PMS.formatCurrency(item.actual);
+        }
+      },
+      {
+        label: "Remaining",
+        key: "remaining",
+        render: function (item) {
+          return PMS.formatCurrency(item.remaining);
+        }
+      },
+      {
+        label: "Usage",
+        key: "usage",
+        render: function (item) {
+          return `${Number(item.usage || 0).toFixed(1)}%`;
+        }
+      }
+    ]
+  });
+}
+
+function getFilterValue(elementId, fallbackValue) {
+  const element = document.getElementById(elementId);
+
+  if (!element) return fallbackValue;
+
+  return element.value || fallbackValue;
+}
+
 function getFilteredBudgetRecords(department, period) {
   return budgetRecords.filter(function (item) {
     const departmentMatches = department === "ALL" || item.department === department;
@@ -116,16 +428,6 @@ function getUniqueValues(records, key) {
   return Array.from(new Set(records.map(function (item) {
     return item[key];
   }).filter(Boolean))).sort();
-}
-
-function getPeriodFromDate(value) {
-  if (!value) return "Unassigned";
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) return "Unassigned";
-
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 }
 
 function exportBudgetCsv() {
