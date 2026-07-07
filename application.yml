@@ -18,10 +18,11 @@ spring:
     locations: classpath:db/migration
 
   mail:
-    host: smtp.gmail.com
-    port: 587
-    username: ${MAIL_USERNAME}
-    password: ${MAIL_PASSWORD}
+    host: ${PMS_MAIL_HOST:${MAIL_HOST:smtp.gmail.com}}
+    port: ${PMS_MAIL_PORT:${MAIL_PORT:587}}
+    protocol: ${PMS_MAIL_PROTOCOL:${MAIL_PROTOCOL:smtp}}
+    username: ${PMS_MAIL_USERNAME:${MAIL_USERNAME:}}
+    password: ${PMS_MAIL_PASSWORD:${MAIL_PASSWORD:}}
     properties:
       mail:
         smtp:
@@ -42,6 +43,8 @@ pms:
   jwt:
     secret: ${PMS_JWT_SECRET:change-this-development-secret-that-is-at-least-32-bytes}
     expiration-minutes: ${PMS_JWT_EXPIRATION_MINUTES:480}
+  mail:
+    test-recipient: ${PMS_MAIL_TEST_RECIPIENT:admindigitaldynamics@gmail.com}
 
 server:
   error:

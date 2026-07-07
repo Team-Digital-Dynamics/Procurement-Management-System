@@ -6,9 +6,9 @@ services:
       MYSQL_DATABASE: pms
       MYSQL_USER: pms
       MYSQL_PASSWORD: pms
-      MYSQL_ROOT_PASSWORD: Password1238
+      MYSQL_ROOT_PASSWORD: admin
     ports:
-      - "3308:3306"
+      - "3307:3306"
     volumes:
       - pms_mysql:/var/lib/mysql
     healthcheck:
@@ -19,7 +19,7 @@ services:
 
   app:
     build:
-      context: .
+      context: ./pms
       dockerfile: Dockerfile
     depends_on:
       mysql:
@@ -28,10 +28,12 @@ services:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/pms?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
       SPRING_DATASOURCE_USERNAME: pms
       SPRING_DATASOURCE_PASSWORD: pms
-      PMS_JWT_SECRET: replace-with-a-production-secret-at-least-32-bytes
-
-      MAIL_USERNAME: admindigitaldynamics@gmail.com
-      MAIL_PASSWORD: yycr wiwx zctr ksav
+      PMS_JWT_SECRET: ${PMS_JWT_SECRET:?PMS_JWT_SECRET is required}
+      PMS_MAIL_HOST: smtp.gmail.com
+      PMS_MAIL_PORT: 587
+      PMS_MAIL_PROTOCOL: smtp
+      PMS_MAIL_USERNAME: escgroupin4@gmail.com
+      PMS_MAIL_PASSWORD: xjkdfumgikfuvwhu
 
     ports:
       - "8080:8080"

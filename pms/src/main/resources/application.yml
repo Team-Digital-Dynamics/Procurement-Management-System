@@ -37,6 +37,8 @@ pms:
   jwt:
     secret: ${PMS_JWT_SECRET:change-this-development-secret-that-is-at-least-32-bytes}
     expiration-minutes: ${PMS_JWT_EXPIRATION_MINUTES:480}
+  mail:
+    test-recipient: ${PMS_MAIL_TEST_RECIPIENT:admindigitaldynamics@gmail.com}
 
 server:
   error:
