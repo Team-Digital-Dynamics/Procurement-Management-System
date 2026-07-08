@@ -34,15 +34,28 @@ public class AuditLog {
     @Column(name = "details", nullable = false, length = 2000)
     private String details;
 
+    @Column(name = "ip_address", length = 80)
+    private String ipAddress;
+
+    @Column(name = "status", nullable = false, length = 40)
+    private String status = "RECORDED";
+
     public AuditLog() {
     }
 
     public AuditLog(String actor, String action, String entityType, String entityId, String details) {
+        this(actor, action, entityType, entityId, details, null, "RECORDED");
+    }
+
+    public AuditLog(String actor, String action, String entityType, String entityId, String details,
+            String ipAddress, String status) {
         this.actor = actor;
         this.action = action;
         this.entityType = entityType;
         this.entityId = entityId;
         this.details = details;
+        this.ipAddress = ipAddress;
+        this.status = status;
     }
 
     @PrePersist
@@ -78,5 +91,13 @@ public class AuditLog {
 
     public String getDetails() {
         return details;
+    }
+
+    public String getIpAddress() {
+        return ipAddress;
+    }
+
+    public String getStatus() {
+        return status;
     }
 }
