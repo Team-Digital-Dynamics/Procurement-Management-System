@@ -7,6 +7,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authorization.AuthorizationDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -18,6 +20,11 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ForbiddenException.class)
     ResponseEntity<ApiResponse<Void>> forbidden(ForbiddenException ex) {
         return errorResponse(HttpStatus.FORBIDDEN, ex.getMessage());
+    }
+
+    @ExceptionHandler({ AccessDeniedException.class, AuthorizationDeniedException.class })
+    ResponseEntity<ApiResponse<Void>> accessDenied(Exception ex) {
+        return errorResponse(HttpStatus.FORBIDDEN, "Access denied.");
     }
 
     @ExceptionHandler(EmailAlreadyExistsException.class)
