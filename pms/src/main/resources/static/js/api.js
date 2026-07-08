@@ -1022,16 +1022,36 @@
 
   function scoutMessageTemplate(message) {
     const isUser = message.sender === "user";
+    const suggestions = !isUser && Array.isArray(message.suggestions) && message.suggestions.length
+      ? `
+        <div class="scout-followup-list">
+          ${message.suggestions.map(scoutFollowupButton).join("")}
+        </div>
+      `
+      : "";
 
     return `
       <div class="scout-message-row ${isUser ? "user" : "assistant"}">
         ${!isUser ? `<img src="/images/Ai_popup.png" alt="Scout" class="scout-message-avatar">` : ""}
 
         <div class="scout-message-bubble">
-          ${escapeHtml(message.text)}
+          ${formatAssistantText(message.text)}
+          ${suggestions}
         </div>
       </div>
     `;
+  }
+
+  function scoutFollowupButton(text) {
+    return `
+      <button class="scout-followup-button" type="button" data-scout-question="${escapeHtml(text)}">
+        ${escapeHtml(text)}
+      </button>
+    `;
+  }
+
+  function formatAssistantText(text) {
+    return escapeHtml(text || "").replace(/\n/g, "<br>");
   }
 
   function attachScoutPopupEvents() {
@@ -1039,8 +1059,12 @@
     const chatBox = document.getElementById("scoutChatBox");
     const closeBtn = document.getElementById("scoutCloseBtn");
     const form = document.getElementById("scoutForm");
+    const sendBtn = form ? form.querySelector("button[type='submit']") : null;
 
     if (!bubbleBtn || !chatBox || !closeBtn || !form) return;
+
+    closeBtn.textContent = "x";
+    if (sendBtn) sendBtn.textContent = ">";
 
     bubbleBtn.addEventListener("click", function () {
       chatBox.classList.toggle("hidden");
@@ -1051,7 +1075,24 @@
       chatBox.classList.add("hidden");
     });
 
+    chatBox.addEventListener("click", function (event) {
+      const button = event.target.closest("[data-scout-question]");
+      if (!button) return;
+
+      submitScoutSuggestion(button.dataset.scoutQuestion);
+    });
+
     form.addEventListener("submit", handleScoutSubmit);
+  }
+
+  function submitScoutSuggestion(question) {
+    const input = document.getElementById("scoutInput");
+    const form = document.getElementById("scoutForm");
+
+    if (!input || !form || !question) return;
+
+    input.value = question;
+    form.dispatchEvent(new Event("submit", { cancelable: true }));
   }
 
 
@@ -1075,6 +1116,44 @@
      input.value = "";
      refreshScoutMessages();
 
+     const loadingId = `loading-${Date.now()}`;
+     const loadingRow = document.createElement("div");
+     loadingRow.id = loadingId;
+     loadingRow.className = "scout-message-row assistant";
+     loadingRow.innerHTML = `
+       <img src="/images/Ai_popup.png" alt="Scout" class="scout-message-avatar">
+       <div class="scout-message-bubble typing-indicator">Scout typing...</div>
+     `;
+     messagesContainer.appendChild(loadingRow);
+     messagesContainer.scrollTop = messagesContainer.scrollHeight;
+
+     try {
+         const response = await postJson("/api/assistant", {
+             message: originalQuestion,
+             roles: getCurrentUserRoles()
+         });
+         let reply = response && response.answer
+             ? response.answer
+             : "I can help with requisitions, approvals, RFQs, suppliers, quotations, purchase orders, GRNs, reports, roles, notifications, and audit logs.";
+
+         document.getElementById(loadingId)?.remove();
+         scoutPopupMessages.push({
+             sender: "assistant",
+             text: reply,
+             suggestions: response && Array.isArray(response.suggestions) ? response.suggestions : []
+         });
+     } catch (error) {
+         document.getElementById(loadingId)?.remove();
+         scoutPopupMessages.push({
+             sender: "assistant",
+             text: "I could not reach the assistant service right now. Please try again, or open the AI Assistant page from the sidebar."
+         });
+     }
+
+     refreshScoutMessages();
+     return;
+
+     {
      // 2. Normalize input for strict matching evaluation
      const cleanQuery = originalQuestion.toLowerCase();
      let reply = "";
@@ -1138,19 +1217,9 @@
 
          refreshScoutMessages();
      }, 450);
+     }
  }
 
- function refreshScoutMessages() {
-     const messagesContainer = document.getElementById("scoutMessages");
-     if (!messagesContainer) return;
-
-     messagesContainer.innerHTML = scoutPopupMessages.map(scoutMessageTemplate).join("");
-     messagesContainer.scrollTop = messagesContainer.scrollHeight;
- }
-
-
-
-  
   function refreshScoutMessages() {
     const messages = document.getElementById("scoutMessages");
 
@@ -1158,6 +1227,11 @@
 
     messages.innerHTML = scoutPopupMessages.map(scoutMessageTemplate).join("");
     messages.scrollTop = messages.scrollHeight;
+  }
+
+  function getCurrentUserRoles() {
+    const user = getUser();
+    return user && Array.isArray(user.roles) ? user.roles : [];
   }
 
   window.PMS = {

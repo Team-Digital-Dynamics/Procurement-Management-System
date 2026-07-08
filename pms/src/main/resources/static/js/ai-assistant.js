@@ -56,11 +56,11 @@ function renderAssistantScreen() {
 
     document.getElementById("assistantForm").addEventListener("submit", handleAssistantSubmit);
 
-    document.querySelectorAll("[data-ai-question]").forEach(function (button) {
-        button.addEventListener("click", function () {
-            document.getElementById("assistantInput").value = button.dataset.aiQuestion;
-            document.getElementById("assistantForm").dispatchEvent(new Event("submit"));
-        });
+    document.querySelector(".ai-chat-shell").addEventListener("click", function (event) {
+        const button = event.target.closest("[data-ai-question]");
+        if (!button) return;
+
+        submitAssistantQuestion(button.dataset.aiQuestion);
     });
 
     scrollToLatestMessage();
@@ -76,6 +76,13 @@ function suggestionButton(text) {
 
 function messageTemplate(message) {
     const isUser = message.sender === "user";
+    const suggestions = !isUser && Array.isArray(message.suggestions) && message.suggestions.length
+        ? `
+        <div class="ai-followup-list">
+          ${message.suggestions.map(assistantFollowupButton).join("")}
+        </div>
+      `
+        : "";
 
     return `
     <div class="ai-message-row ${isUser ? "user" : "assistant"}">
@@ -84,10 +91,23 @@ function messageTemplate(message) {
       </div>
 
       <div class="ai-message-bubble">
-        <p>${PMS.escapeHtml(message.text)}</p>
+        <p>${formatAssistantText(message.text)}</p>
+        ${suggestions}
       </div>
     </div>
   `;
+}
+
+function assistantFollowupButton(text) {
+    return `
+    <button class="ai-followup-button" type="button" data-ai-question="${PMS.escapeHtml(text)}">
+      ${PMS.escapeHtml(text)}
+    </button>
+  `;
+}
+
+function formatAssistantText(text) {
+    return PMS.escapeHtml(text || "").replace(/\n/g, "<br>");
 }
 
 // Dedicated function to get responses based on keywords
@@ -222,7 +242,13 @@ async function handleAssistantSubmit(event) {
     const input = document.getElementById("assistantInput");
     const question = input.value.trim();
 
+    await submitAssistantQuestion(question);
+}
+
+async function submitAssistantQuestion(question) {
     if (!question) return;
+
+    const input = document.getElementById("assistantInput");
 
     // 1. Add user message
     assistantMessages.push({
@@ -230,7 +256,9 @@ async function handleAssistantSubmit(event) {
         text: question
     });
 
-    input.value = "";
+    if (input) {
+        input.value = "";
+    }
     refreshMessages();
 
     // 2. Add temporary loading state
@@ -240,19 +268,38 @@ async function handleAssistantSubmit(event) {
     });
     refreshMessages();
 
-    // 3. Simulate network/system response using your statement logic
-    setTimeout(() => {
+    try {
+        const response = await PMS.postJson("/api/assistant", {
+            message: question,
+            roles: getCurrentUserRoles()
+        });
+
         assistantMessages.pop(); // Remove "Thinking..."
 
-        const finalAnswer = getAssistantResponse(question);
+        const finalAnswer = response?.answer || getAssistantResponse(question);
 
         assistantMessages.push({
             sender: "assistant",
-            text: finalAnswer
+            text: finalAnswer,
+            suggestions: Array.isArray(response?.suggestions) ? response.suggestions : []
         });
 
         refreshMessages();
-    }, 400); // Small delay to feel natural
+    } catch (error) {
+        assistantMessages.pop(); // Remove "Thinking..."
+
+        assistantMessages.push({
+            sender: "assistant",
+            text: getAssistantResponse(question)
+        });
+
+        refreshMessages();
+    }
+}
+
+function getCurrentUserRoles() {
+    const user = PMS.getUser ? PMS.getUser() : null;
+    return user && Array.isArray(user.roles) ? user.roles : [];
 }
 
 // Fixed UI refresh function so it renders to the DOM again
