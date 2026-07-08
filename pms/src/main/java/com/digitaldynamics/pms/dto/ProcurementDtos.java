@@ -97,7 +97,15 @@ public final class ProcurementDtos {
         public record AwardRequest(@NotNull Long quotationId, Long overrideQuotationId, String overrideJustification) {
         }
 
-        public record PurchaseOrderResponse(Long id, String poNumber, Long supplierId, BigDecimal totalAmount,
+        public record PurchaseOrderResponse(
+                        Long id,
+                        String poNumber,
+                        Long supplierId,
+                        String supplierName,
+                        Long quotationId,
+                        Long rfqId,
+                        Long requisitionId,
+                        BigDecimal totalAmount,
                         String status) {
         }
 

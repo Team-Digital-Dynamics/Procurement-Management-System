@@ -231,11 +231,10 @@ function rfqSummary(rfq, linkedRequisition) {
         <strong>${formatPossibleDate(rfq.createdAt || rfq.createdDate || rfq.dateCreated)}</strong>
       </div>
 
-      <div>
-        <span>Closing Date</span>
-        <strong>${formatPossibleDate(rfq.closingDate || rfq.deadline || rfq.validUntil)}</strong>
-      </div>
-    </div>
+     <div>
+  <span>Submission Deadline</span>
+  <strong>${formatPossibleDate(rfq.submissionDeadline || rfq.closingDate || rfq.deadline || rfq.validUntil)}</strong>
+</div>
   `;
 }
 
