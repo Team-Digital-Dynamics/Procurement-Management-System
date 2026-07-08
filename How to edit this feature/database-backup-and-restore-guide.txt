@@ -1,0 +1,191 @@
+Title:
+Add database backup and restore support
+
+Description:
+Implemented database integrity features for manual backup, scheduled backup, and backup restore.
+
+Changes included:
+- Added admin-only backup endpoints under /api/backups.
+- Added manual database backup creation with SQL export and SHA-256 checksum file.
+- Added scheduled daily backup job, configurable through application.yml or environment variables.
+- Added backup verification support so backup integrity can be checked before restore.
+- Added restore support that verifies checksum before restoring data.
+- Added audit logging for manual backup, scheduled backup, and restore actions.
+- Added backup configuration properties for directory, cron schedule, and scheduler enablement.
+- Added integration test coverage for manual backup, scheduled backup, and restore integrity.
+
+Acceptance results:
+- Manual backup: Successful
+- Scheduled backup: Successful
+- Restore backup: Successful
+
+
+How to edit this feature:
+
+1. Edit the backup API endpoints:
+   File:
+   pms/src/main/java/com/digitaldynamics/pms/controller/BackupController.java
+
+   Use this file when you need to change:
+   - The backup endpoint paths.
+   - The response messages.
+   - The admin authorization rules.
+   - The backup verification endpoint.
+   - The audit log messages for manual backup and restore.
+
+2. Edit the backup and restore logic:
+   File:
+   pms/src/main/java/com/digitaldynamics/pms/service/DatabaseBackupService.java
+
+   Use this file when you need to change:
+   - How SQL backup files are generated.
+   - Which tables are included or excluded.
+   - How checksums are created or verified.
+   - How backup SQL is inspected before restore.
+   - How restore statements are executed.
+   - How referential integrity is disabled and enabled during restore.
+
+3. Edit scheduled backup behavior:
+   File:
+   pms/src/main/java/com/digitaldynamics/pms/scheduler/DatabaseBackupJob.java
+
+   Use this file when you need to change:
+   - What happens during the scheduled backup.
+   - The scheduled backup audit log.
+   - Whether extra checks should run before creating a scheduled backup.
+
+4. Edit backup configuration defaults:
+   File:
+   pms/src/main/resources/application.yml
+
+   Current configuration:
+   pms.backup.directory = backup storage folder
+   pms.backup.cron = scheduled backup cron expression
+   pms.backup.scheduled-enabled = turns scheduled backups on or off
+
+   Environment variables:
+   PMS_BACKUP_DIRECTORY
+   PMS_BACKUP_CRON
+   PMS_BACKUP_SCHEDULED_ENABLED
+
+5. Edit backup DTOs:
+   File:
+   pms/src/main/java/com/digitaldynamics/pms/dto/BackupDtos.java
+
+   Use this file when you need to change:
+   - The fields returned after a backup.
+   - The fields returned after a restore.
+   - The request body required for restore.
+
+6. Edit or extend tests:
+   File:
+   pms/src/test/java/com/digitaldynamics/pms/DatabaseBackupServiceTests.java
+
+   Use this file when you need to test:
+   - Manual backup creation.
+   - Scheduled backup creation.
+   - Restore behavior.
+   - Checksum verification.
+   - Backup listing.
+
+
+How it works:
+
+Manual backup:
+1. An admin sends a POST request to /api/backups/manual.
+2. BackupController calls DatabaseBackupService.createBackup("MANUAL").
+3. DatabaseBackupService reads application database tables.
+4. It writes DELETE and INSERT SQL statements into a timestamped .sql file.
+5. It creates a SHA-256 checksum file next to the backup.
+6. The controller records an audit log entry.
+7. The API returns the backup file name, checksum, table count, row count, and timestamp.
+
+Scheduled backup:
+1. Spring scheduling runs DatabaseBackupJob using the configured cron expression.
+2. The default schedule is 02:00 every day.
+3. The job checks pms.backup.scheduled-enabled.
+4. If enabled, it calls DatabaseBackupService.createBackup("SCHEDULED").
+5. A .sql backup file and .sha256 checksum file are created.
+6. The system records an audit log entry with actor SYSTEM.
+
+Verify backup:
+1. An admin sends a GET request to /api/backups/{fileName}/verify.
+2. DatabaseBackupService verifies that the file is inside the configured backup directory.
+3. It reads the stored checksum from the matching .sha256 file.
+4. It recalculates the current SHA-256 checksum of the .sql file.
+5. It compares the stored checksum and actual checksum.
+6. It inspects the backup SQL and counts executable statements and INSERT statements.
+7. The API returns whether the checksum matches, both checksum values, file size, statement count, insert count, and verification timestamp.
+
+Restore backup:
+1. An admin sends a POST request to /api/backups/restore.
+2. The request body must include the backup file name.
+3. Example:
+   {
+     "fileName": "pms-backup-20260708-110342-123.sql"
+   }
+4. DatabaseBackupService verifies that the file is inside the configured backup directory.
+5. It reads the matching .sha256 checksum file.
+6. It recalculates the backup file checksum.
+7. If the checksum does not match, restore is rejected.
+8. If the checksum matches, restore starts.
+9. Referential integrity is temporarily disabled for the restore.
+10. The backup SQL statements are executed.
+11. Referential integrity is enabled again.
+12. The controller records an audit log entry.
+13. The API returns the restored file name, checksum, timestamp, and executed statement count.
+
+
+API summary:
+
+List backups:
+GET /api/backups
+
+Create manual backup:
+POST /api/backups/manual
+
+Verify backup:
+GET /api/backups/{fileName}/verify
+
+Restore backup:
+POST /api/backups/restore
+
+Restore request body:
+{
+  "fileName": "pms-backup-20260708-110342-123.sql"
+}
+
+
+Configuration summary:
+
+Default configuration in application.yml:
+pms:
+  backup:
+    directory: ${PMS_BACKUP_DIRECTORY:backups}
+    cron: ${PMS_BACKUP_CRON:0 0 2 * * *}
+    scheduled-enabled: ${PMS_BACKUP_SCHEDULED_ENABLED:true}
+
+To change the backup folder:
+Set PMS_BACKUP_DIRECTORY to the folder path where backup files should be stored.
+
+To change the backup schedule:
+Set PMS_BACKUP_CRON to a valid Spring cron expression.
+
+To disable scheduled backups:
+Set PMS_BACKUP_SCHEDULED_ENABLED=false.
+
+
+Verification:
+
+Run tests from the pms folder:
+.\mvnw.cmd test
+
+Expected result:
+BUILD SUCCESS
+
+The backup test confirms:
+- Manual backup can be created.
+- Scheduled backup path can be created.
+- Backup checksum can be verified before restore.
+- Backup SQL contains executable INSERT statements.
+- Restore verifies checksum and restores database values.

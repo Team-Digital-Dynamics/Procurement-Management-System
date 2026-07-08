@@ -43,6 +43,10 @@ pms:
     force-https: false
   mail:
     test-recipient: ${PMS_MAIL_TEST_RECIPIENT:admindigitaldynamics@gmail.com}
+  backup:
+    directory: ${PMS_BACKUP_DIRECTORY:backups}
+    cron: ${PMS_BACKUP_CRON:0 0 2 * * *}
+    scheduled-enabled: ${PMS_BACKUP_SCHEDULED_ENABLED:true}
 
 server:
   error:
