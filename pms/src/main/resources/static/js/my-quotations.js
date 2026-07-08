@@ -1,7 +1,14 @@
 let quotationRecords = [];
 let quotationUsesDemoData = false;
+let quotationSecurityContext = {
+  roles: [],
+  isSupplier: false,
+  fetchPath: "/api/v1/quotations"
+};
 
 document.addEventListener("DOMContentLoaded", async function () {
+  await initializeQuotationSecurityContext();
+
   PMS.renderLayout(
     "my-quotations",
     "My Quotations",
@@ -27,6 +34,10 @@ async function loadMyQuotationsPage() {
     quotationRecords = await loadQuotationRecords();
     quotationUsesDemoData = false;
   } catch (error) {
+    if (handleForbiddenDuringDataLoad(error)) {
+      return;
+    }
+
     quotationRecords = getDemoQuotations();
     quotationUsesDemoData = true;
   }
@@ -35,10 +46,157 @@ async function loadMyQuotationsPage() {
 }
 
 async function loadQuotationRecords() {
-  const response = await PMS.getJson("/api/quotations/my");
+  const response = await fetchQuotationPayload(quotationSecurityContext.fetchPath);
   const list = extractList(response);
 
   return list.map(normaliseQuotationRecord);
+}
+
+async function initializeQuotationSecurityContext() {
+  const context = await resolveQuotationSecurityContext();
+
+  quotationSecurityContext = {
+    roles: context.roles,
+    isSupplier: context.isSupplier,
+    fetchPath: context.isSupplier ? "/api/v1/quotations/my-submissions" : "/api/v1/quotations"
+  };
+}
+
+async function resolveQuotationSecurityContext() {
+  const userRoles = extractRolesFromUser(PMS.getUser ? PMS.getUser() : null);
+
+  if (userRoles.length > 0) {
+    return buildSecurityContext(userRoles);
+  }
+
+  try {
+    const sessionPayload = await fetchSessionPayload();
+    const sessionRoles = extractRolesFromUser(sessionPayload);
+
+    return buildSecurityContext(sessionRoles);
+  } catch (error) {
+    if (handleForbiddenDuringDataLoad(error)) {
+      return buildSecurityContext([]);
+    }
+
+    return buildSecurityContext([]);
+  }
+}
+
+function buildSecurityContext(roles) {
+  const normalizedRoles = roles.map(normalizeRoleToken);
+
+  return {
+    roles: normalizedRoles,
+    isSupplier: normalizedRoles.includes("SUPPLIER")
+  };
+}
+
+function extractRolesFromUser(userPayload) {
+  if (!userPayload) {
+    return [];
+  }
+
+  if (Array.isArray(userPayload.roles)) {
+    return userPayload.roles;
+  }
+
+  if (Array.isArray(userPayload.data?.roles)) {
+    return userPayload.data.roles;
+  }
+
+  return [];
+}
+
+function normalizeRoleToken(role) {
+  return String(role || "").trim().toUpperCase();
+}
+
+async function fetchSessionPayload() {
+  const token = PMS.getToken ? PMS.getToken() : "";
+  const headers = token
+    ? {
+        Accept: "application/json",
+        Authorization: `Bearer ${token}`
+      }
+    : {
+        Accept: "application/json"
+      };
+
+  const candidates = ["/api/v1/auth/session", "/api/auth/session"];
+  let lastError = null;
+
+  for (const path of candidates) {
+    try {
+      return await fetchJsonWithForbiddenBoundary(path, {
+        method: "GET",
+        headers: headers
+      });
+    } catch (error) {
+      lastError = error;
+      if (error && error.isForbidden) {
+        throw error;
+      }
+    }
+  }
+
+  throw lastError || new Error("Unable to resolve session context.");
+}
+
+async function fetchQuotationPayload(path) {
+  const token = PMS.getToken ? PMS.getToken() : "";
+
+  return fetchJsonWithForbiddenBoundary(path, {
+    method: "GET",
+    headers: token
+      ? {
+          Accept: "application/json",
+          Authorization: `Bearer ${token}`
+        }
+      : {
+          Accept: "application/json"
+        }
+  });
+}
+
+async function fetchJsonWithForbiddenBoundary(path, options) {
+  const response = await fetch(path, options || {});
+
+  if (response.status === 403) {
+    const forbiddenError = new Error("Forbidden");
+    forbiddenError.isForbidden = true;
+    throw forbiddenError;
+  }
+
+  const text = await response.text();
+  let body = null;
+
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch (error) {
+    body = text;
+  }
+
+  if (!response.ok) {
+    const requestError = new Error(body?.message || response.statusText || "Request failed");
+    requestError.status = response.status;
+    throw requestError;
+  }
+
+  return body;
+}
+
+function handleForbiddenDuringDataLoad(error) {
+  if (!error) {
+    return false;
+  }
+
+  if (error.isForbidden || error.status === 403) {
+    window.location.href = "/403.html";
+    return true;
+  }
+
+  return false;
 }
 
 

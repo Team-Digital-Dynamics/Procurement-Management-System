@@ -118,46 +118,159 @@
     const form = event.target;
 
     const payload = {
-      rfqNumber: form.rfqNumber.value.trim(),
-      supplierName: form.supplierName.value.trim(),
-      amount: Number(form.amount.value),
-      deliveryDays: Number(form.deliveryDays.value),
+      rfqId: form.rfqId.value.trim(),
+      totalBidAmount: Number(form.totalBidAmount.value),
+      itemLineDetails: collectItemLineDetails(form),
       notes: form.notes.value.trim()
     };
 
-    if (!payload.rfqNumber || !payload.supplierName || payload.amount <= 0 || payload.deliveryDays <= 0) {
-      alert("Please complete RFQ Number, Supplier Name, Amount and Delivery Days.");
+    if (!payload.rfqId || payload.totalBidAmount <= 0 || payload.itemLineDetails.length === 0) {
+      alert("Please complete RFQ ID, Total Bid Amount and at least one valid line item.");
       return;
     }
 
+    const submitButton = form.querySelector("button[type='submit']");
+    const originalButtonText = submitButton ? submitButton.textContent : "";
+
+    if (submitButton) {
+      submitButton.disabled = true;
+      submitButton.textContent = "Saving...";
+    }
+
     try {
-      const savedQuotation = await PMS.postJson("/api/supplier-portal/quotations", payload);
+      const response = await fetch("/api/v1/quotations", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json"
+        },
+        body: JSON.stringify(payload)
+      });
 
-      quotations.unshift(savedQuotation);
-      form.reset();
+      const responseBody = await parseResponseBody(response);
 
-      alert("Quotation submitted successfully.");
-      applyFilters();
-    } catch (error) {
-      console.warn("Backend quotation submit not available yet:", error.message);
+      if (response.status !== 201) {
+        throw new Error(
+          (responseBody && (responseBody.message || responseBody.error || responseBody.details)) ||
+          "Unable to save quotation."
+        );
+      }
 
-      const newQuotation = {
-        id: Date.now(),
-        quotationNumber: "QTN-DEMO-" + Date.now(),
-        rfqNumber: payload.rfqNumber,
-        supplierName: payload.supplierName,
-        amount: payload.amount,
-        deliveryDays: payload.deliveryDays,
-        status: "SUBMITTED",
+      const generatedId = getGeneratedQuotationId(responseBody);
+
+      appendQuotationSaveConfirmation(generatedId);
+
+      const savedQuotation = {
+        id: generatedId,
+        quotationNumber: responseBody.quotationNumber || `QTN-${generatedId}`,
+        rfqNumber: payload.rfqId,
+        supplierName: responseBody.supplierName || "Current Supplier",
+        amount: payload.totalBidAmount,
+        deliveryDays: responseBody.deliveryDays || "-",
+        status: "Saved",
         submittedDate: new Date().toISOString().split("T")[0]
       };
 
-      quotations.unshift(newQuotation);
+      quotations.unshift(savedQuotation);
       form.reset();
+      renderDefaultLineItemRows();
 
-      alert("Quotation added to this page as demo data. Backend submit can be connected later.");
       applyFilters();
+    } catch (error) {
+      alert(error.message || "Unable to save quotation.");
+    } finally {
+      if (submitButton) {
+        submitButton.disabled = false;
+        submitButton.textContent = originalButtonText;
+      }
     }
+  }
+
+  function collectItemLineDetails(form) {
+    return Array.from(form.querySelectorAll("[data-line-item-row]"))
+      .map(function (row) {
+        const description = row.querySelector("[name='itemDescription']")?.value.trim() || "";
+        const quantity = Number(row.querySelector("[name='itemQuantity']")?.value || 0);
+        const unitPrice = Number(row.querySelector("[name='itemUnitPrice']")?.value || 0);
+
+        return {
+          description: description,
+          quantity: quantity,
+          unitPrice: unitPrice,
+          lineTotal: Number((quantity * unitPrice).toFixed(2))
+        };
+      })
+      .filter(function (line) {
+        return line.description && line.quantity > 0 && line.unitPrice > 0;
+      });
+  }
+
+  async function parseResponseBody(response) {
+    const contentType = response.headers.get("content-type") || "";
+
+    try {
+      if (contentType.includes("application/json")) {
+        return await response.json();
+      }
+
+      const text = await response.text();
+      return text ? { message: text } : {};
+    } catch (error) {
+      return {};
+    }
+  }
+
+  function getGeneratedQuotationId(responseBody) {
+    const id =
+      responseBody?.id ||
+      responseBody?.quotationId ||
+      responseBody?.data?.id ||
+      responseBody?.data?.quotationId;
+
+    return id ? String(id) : `temp-${Date.now()}`;
+  }
+
+  function appendQuotationSaveConfirmation(generatedId) {
+    const host = document.getElementById("quotationSubmissionResult");
+    if (!host) {
+      return;
+    }
+
+    host.innerHTML = `
+      <div class="message success" role="status" aria-live="polite">
+        <strong>Quotation saved successfully.</strong>
+        <p>Database ID: <strong>${PMS.escapeHtml(generatedId)}</strong></p>
+        <p>State: <strong>Saved</strong></p>
+      </div>
+    `;
+  }
+
+  function renderDefaultLineItemRows() {
+    const container = document.getElementById("quoteLineItems");
+    if (!container) {
+      return;
+    }
+
+    container.innerHTML = createLineItemRowHtml();
+  }
+
+  function createLineItemRowHtml() {
+    return `
+      <div class="grid-3" data-line-item-row>
+        <div class="form-group">
+          <label>Item Description</label>
+          <input name="itemDescription" type="text" placeholder="Item description" required>
+        </div>
+        <div class="form-group">
+          <label>Quantity</label>
+          <input name="itemQuantity" type="number" min="1" step="1" placeholder="0" required>
+        </div>
+        <div class="form-group">
+          <label>Unit Price</label>
+          <input name="itemUnitPrice" type="number" min="0.01" step="0.01" placeholder="0.00" required>
+        </div>
+      </div>
+    `;
   }
 
   function renderPage() {
@@ -194,29 +307,27 @@
 
         <form id="quotationForm" class="form-grid">
           <div class="form-group">
-            <label for="rfqNumber">RFQ Number</label>
-            <input id="rfqNumber" name="rfqNumber" type="text" placeholder="Example: RFQ-2026-001" required>
+            <label for="rfqId">RFQ ID</label>
+            <input id="rfqId" name="rfqId" type="text" value="${PMS.escapeHtml(selectedRfqId || "")}" placeholder="Example: 1001" required>
           </div>
 
           <div class="form-group">
-            <label for="supplierName">Supplier Name</label>
-            <input id="supplierName" name="supplierName" type="text" placeholder="Supplier name" required>
+            <label for="totalBidAmount">Total Bid Amount</label>
+            <input id="totalBidAmount" name="totalBidAmount" type="number" min="0.01" step="0.01" placeholder="0.00" required>
           </div>
 
-          <div class="form-group">
-            <label for="amount">Quotation Amount</label>
-            <input id="amount" name="amount" type="number" min="1" step="0.01" placeholder="0.00" required>
-          </div>
-
-          <div class="form-group">
-            <label for="deliveryDays">Delivery Days</label>
-            <input id="deliveryDays" name="deliveryDays" type="number" min="1" placeholder="Example: 7" required>
+          <div class="form-group full-width">
+            <label>Item Line Details</label>
+            <div id="quoteLineItems"></div>
+            <button id="addQuoteLineItemBtn" type="button" class="btn btn-soft">Add Line Item</button>
           </div>
 
           <div class="form-group full-width">
             <label for="notes">Notes</label>
             <textarea id="notes" name="notes" rows="4" placeholder="Add any supplier notes, delivery terms or important information"></textarea>
           </div>
+
+          <div id="quotationSubmissionResult" class="full-width"></div>
 
           <div class="form-actions full-width">
             <button type="submit" class="btn btn-primary">Submit Quotation</button>
@@ -243,6 +354,7 @@
             <label for="quotationStatusFilter">Status</label>
             <select id="quotationStatusFilter">
               <option value="ALL">All Statuses</option>
+              <option value="Saved">Saved</option>
               <option value="SUBMITTED">Submitted</option>
               <option value="UNDER_REVIEW">Under Review</option>
               <option value="ACCEPTED">Accepted</option>
@@ -256,8 +368,25 @@
     `);
 
     document.getElementById("quotationForm").addEventListener("submit", handleQuotationSubmit);
+    document.getElementById("addQuoteLineItemBtn").addEventListener("click", function () {
+      const container = document.getElementById("quoteLineItems");
+      if (!container) {
+        return;
+      }
+
+      container.insertAdjacentHTML("beforeend", createLineItemRowHtml());
+    });
+    document.getElementById("quotationForm").addEventListener("reset", function () {
+      setTimeout(renderDefaultLineItemRows, 0);
+      const confirmation = document.getElementById("quotationSubmissionResult");
+      if (confirmation) {
+        confirmation.innerHTML = "";
+      }
+    });
     document.getElementById("quotationSearch").addEventListener("input", applyFilters);
     document.getElementById("quotationStatusFilter").addEventListener("change", applyFilters);
+
+    renderDefaultLineItemRows();
 
     applyFilters();
   }

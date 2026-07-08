@@ -42,8 +42,10 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -59,6 +61,7 @@ public class ProcurementService {
     private final GoodsReceivedNoteRepository grnRepository;
     private final UserRepository userRepository;
     private final AuditService auditService;
+    private final NotificationService notificationService;
     private final ProcurementMapper procurementMapper;
     private final SegregationOfDutiesGuard segregationOfDutiesGuard;
 
@@ -72,6 +75,7 @@ public class ProcurementService {
             GoodsReceivedNoteRepository grnRepository,
             UserRepository userRepository,
             AuditService auditService,
+            NotificationService notificationService,
             ProcurementMapper procurementMapper,
             SegregationOfDutiesGuard segregationOfDutiesGuard) {
 
@@ -84,6 +88,7 @@ public class ProcurementService {
         this.grnRepository = grnRepository;
         this.userRepository = userRepository;
         this.auditService = auditService;
+        this.notificationService = notificationService;
         this.procurementMapper = procurementMapper;
         this.segregationOfDutiesGuard = segregationOfDutiesGuard;
     }
@@ -275,6 +280,17 @@ public class ProcurementService {
 
     @Transactional
     public RfqResponse createRfq(RfqRequest request, String actor) {
+        List<Long> supplierIds = request.supplierIds() == null
+                ? List.of()
+                : request.supplierIds().stream()
+                        .filter(id -> id != null && id > 0)
+                        .distinct()
+                        .toList();
+
+        if (supplierIds.isEmpty()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Select at least one approved supplier for this RFQ");
+        }
+
         if (request.priceWeight()
                 + request.deliveryWeight()
                 + request.qualityWeight()
@@ -304,12 +320,43 @@ public class ProcurementService {
 
         rfqRepository.save(rfq);
 
+        List<Supplier> selectedSuppliers = supplierRepository.findAllById(supplierIds);
+
+        if (selectedSuppliers.size() != new LinkedHashSet<>(supplierIds).size()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "One or more selected suppliers do not exist");
+        }
+
+        for (Supplier supplier : selectedSuppliers) {
+            if (supplier.getStatus() != SupplierStatus.APPROVED) {
+                throw new ApiException(
+                        HttpStatus.BAD_REQUEST,
+                        "All selected suppliers must be in APPROVED status");
+            }
+
+            Optional<User> supplierUser = userRepository.findByEmail(supplier.getContactEmail().toLowerCase());
+            if (supplierUser.isPresent()) {
+                notificationService.dispatchAlert(
+                        supplierUser.get().getId(),
+                        supplier.getContactEmail(),
+                        "Request For Quotation (RFQ)",
+                        "You have been invited to submit a quotation for " + rfq.getRfqNumber(),
+                        true);
+            } else {
+                notificationService.dispatchAlert(
+                        null,
+                        supplier.getContactEmail(),
+                        "Request For Quotation (RFQ)",
+                        "You have been invited to submit a quotation for " + rfq.getRfqNumber(),
+                        false);
+            }
+        }
+
         auditService.logEvent(
                 actor,
                 "CREATE_RFQ",
                 "Rfq",
                 String.valueOf(rfq.getId()),
-                "RFQ created from requisition");
+                "RFQ created from requisition and invitations sent to " + selectedSuppliers.size() + " supplier(s)");
 
         return procurementMapper.toRfqResponse(rfq);
     }

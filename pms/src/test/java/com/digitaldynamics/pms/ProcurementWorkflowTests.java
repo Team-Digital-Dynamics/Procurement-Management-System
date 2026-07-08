@@ -65,7 +65,7 @@ class ProcurementWorkflowTests {
                 approver.getEmail());
 
         var rfq = procurementService.createRfq(new RfqRequest(requisition.id(), Instant.now().plusSeconds(86400),
-                50, 20, 15, 10, 5), "procurement@digitaldynamics.co.za");
+                List.of(supplier.id()), 50, 20, 15, 10, 5), "procurement@digitaldynamics.co.za");
         var quote = procurementService.submitQuotation(new QuotationRequest(rfq.id(), supplier.id(),
                 BigDecimal.valueOf(14500), 5, 90, 85), "supplier-portal");
         procurementService.evaluate(rfq.id(), "procurement@digitaldynamics.co.za");

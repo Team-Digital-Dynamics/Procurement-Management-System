@@ -8,6 +8,9 @@ document.addEventListener("DOMContentLoaded", function () {
   loadPurchaseOrders();
 });
 
+const poGenerationInFlight = new Set();
+const PO_ALREADY_GENERATED_WARNING = "Action Blocked: A Purchase Order has already been generated for this item.";
+
 async function loadPurchaseOrders(messageHtml) {
   PMS.showLoading("Loading purchase orders...");
 
@@ -33,6 +36,8 @@ async function loadPurchaseOrders(messageHtml) {
           </div>
         </div>
 
+        <div id="poActionAlert"></div>
+
         ${purchaseOrdersTable(purchaseOrders)}
       </section>
     `);
@@ -44,6 +49,8 @@ async function loadPurchaseOrders(messageHtml) {
         loadPurchaseOrders();
       });
     }
+
+    wireGeneratePoHandlers(purchaseOrders);
   } catch (error) {
     PMS.setContent(`
       <section class="view-section">
@@ -77,6 +84,9 @@ function purchaseOrdersTable(purchaseOrders) {
 
         <tbody>
           ${purchaseOrders.map(function (po) {
+            const isGenerated = hasPurchaseOrderAlready(po);
+            const trackId = po.id || po.rfqId || po.requisitionId || "";
+
             return `
               <tr>
                 <td>${PMS.escapeHtml(po.id || "-")}</td>
@@ -99,6 +109,19 @@ function purchaseOrdersTable(purchaseOrders) {
                       onclick="goToGrnPlaceholder('${PMS.escapeHtml(po.id)}')"
                     >
                       Capture GRN
+                    </button>
+
+                    <button
+                      class="btn btn-sm btn-soft"
+                      type="button"
+                      data-generate-po-btn="${PMS.escapeHtml(trackId)}"
+                      data-track-id="${PMS.escapeHtml(trackId)}"
+                      data-rfq-id="${PMS.escapeHtml(po.rfqId || "")}"
+                      data-requisition-id="${PMS.escapeHtml(po.requisitionId || "")}"
+                      data-supplier-id="${PMS.escapeHtml(po.supplierId || "")}"
+                      ${isGenerated ? "disabled aria-disabled=\"true\"" : ""}
+                    >
+                      ${isGenerated ? "PO Generated" : "Generate PO"}
                     </button>
                   </div>
                 </td>
@@ -141,4 +164,129 @@ function getPoAmount(po) {
 
 function goToGrnPlaceholder(poId) {
   window.location.href = "/grn-capture.html?poId=" + encodeURIComponent(poId);
+}
+
+function hasPurchaseOrderAlready(item) {
+  const status = String(item?.status || "").toUpperCase();
+
+  return Boolean(
+    item?.poGenerated ||
+    item?.poId ||
+    item?.purchaseOrderId ||
+    item?.poNumber ||
+    status === "AWARDED" ||
+    status === "PO_CREATED" ||
+    status === "PO_GENERATED" ||
+    status === "DISPATCHED"
+  );
+}
+
+function wireGeneratePoHandlers(items) {
+  const buttons = document.querySelectorAll("[data-generate-po-btn]");
+
+  buttons.forEach(function (button) {
+    const trackId = String(button.dataset.trackId || "");
+    const item = Array.isArray(items)
+      ? items.find(function (entry) {
+          const entryId = String(entry.id || entry.rfqId || entry.requisitionId || "");
+          return entryId === trackId;
+        })
+      : null;
+
+    if (hasPurchaseOrderAlready(item || {})) {
+      button.disabled = true;
+      button.setAttribute("aria-disabled", "true");
+      return;
+    }
+
+    button.addEventListener("click", function () {
+      attemptGeneratePo(item || {}, button);
+    });
+  });
+}
+
+async function attemptGeneratePo(item, button) {
+  const trackId = String(
+    item?.id ||
+    item?.rfqId ||
+    item?.requisitionId ||
+    button?.dataset?.trackId ||
+    ""
+  );
+
+  if (button && button.disabled) {
+    showPoAlreadyGeneratedWarning();
+    return;
+  }
+
+  if (poGenerationInFlight.has(trackId)) {
+    showPoAlreadyGeneratedWarning();
+    return;
+  }
+
+  const payload = {
+    rfqId: Number(item?.rfqId || button?.dataset?.rfqId || 0) || null,
+    requisitionId: Number(item?.requisitionId || button?.dataset?.requisitionId || 0) || null,
+    supplierId: Number(item?.supplierId || button?.dataset?.supplierId || 0) || null
+  };
+
+  poGenerationInFlight.add(trackId);
+
+  if (button) {
+    button.disabled = true;
+    button.textContent = "Generating...";
+  }
+
+  try {
+    const response = await fetch("/api/v1/purchase-orders/generate", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json"
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (response.status === 409 || response.status === 400) {
+      showPoAlreadyGeneratedWarning();
+      return;
+    }
+
+    if (!response.ok) {
+      throw new Error("Unable to generate purchase order.");
+    }
+
+    if (button) {
+      button.disabled = true;
+      button.setAttribute("aria-disabled", "true");
+      button.textContent = "PO Generated";
+    }
+
+    if (typeof PMS !== "undefined" && PMS.showToast) {
+      PMS.showToast("success", "Purchase order generated successfully.");
+    }
+  } catch (error) {
+    if (button) {
+      button.disabled = false;
+      button.textContent = "Generate PO";
+    }
+
+    if (typeof PMS !== "undefined" && PMS.showToast) {
+      PMS.showToast("error", error.message || "Unable to generate purchase order.");
+    }
+  } finally {
+    poGenerationInFlight.delete(trackId);
+  }
+}
+
+function showPoAlreadyGeneratedWarning() {
+  const host = document.getElementById("poActionAlert");
+
+  if (host) {
+    host.innerHTML = PMS.message("warning", PO_ALREADY_GENERATED_WARNING);
+  }
+
+  if (typeof PMS !== "undefined" && PMS.showToast) {
+    PMS.showToast("warning", PO_ALREADY_GENERATED_WARNING);
+  }
 }

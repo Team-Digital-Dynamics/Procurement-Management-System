@@ -39,6 +39,8 @@ pms:
   jwt:
     secret: ${PMS_JWT_SECRET:change-this-development-secret-that-is-at-least-32-bytes}
     expiration-minutes: ${PMS_JWT_EXPIRATION_MINUTES:480}
+  security:
+    force-https: false
   mail:
     test-recipient: ${PMS_MAIL_TEST_RECIPIENT:admindigitaldynamics@gmail.com}
 
@@ -108,3 +110,7 @@ server:
       min-spare: ${SERVER_TOMCAT_THREADS_MIN_SPARE:20}
     max-connections: ${SERVER_TOMCAT_MAX_CONNECTIONS:8192}
     accept-count: ${SERVER_TOMCAT_ACCEPT_COUNT:100}
+
+pms:
+  security:
+    force-https: true

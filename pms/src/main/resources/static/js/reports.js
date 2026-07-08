@@ -68,18 +68,223 @@ async function loadReports() {
             </button>
             <div id="exportMenu" style="display: none; position: absolute; right: 0; top: 110%; background: #fff; min-width: 160px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); border-radius: 6px; z-index: 100; border: 1px solid #e2e8f0;">
               <a href="#" onclick="triggerDataExport('CSV'); return false;" style="display: block; padding: 10px 16px; text-decoration: none; color: #334155; font-size: 14px; border-bottom: 1px solid #f1f5f9;">Export as CSV</a>
-              <a href="#" onclick="triggerDataExport('EXCEL'); return false;" style="display: block; padding: 10px 16px; text-decoration: none; color: #334155; font-size: 14px; border-bottom: 1px solid #f1f5f9;">Export as Excel</a>
-              <a href="#" onclick="triggerDataExport('PDF'); return false;" style="display: block; padding: 10px 16px; text-decoration: none; color: #334155; font-size: 14px;">Export as PDF</a>
+              <a href="#" id="exportExcelBtn" style="display: block; padding: 10px 16px; text-decoration: none; color: #334155; font-size: 14px; border-bottom: 1px solid #f1f5f9;">Export as Excel</a>
+              <a href="#" id="exportPdfBtn" style="display: block; padding: 10px 16px; text-decoration: none; color: #334155; font-size: 14px;">Export as PDF</a>
             </div>
           </div>
         </div>
 
-        ${reportsSummaryTable(currentReportDetails)}
+        <form id="reportsFilterForm" class="form-grid" style="margin-top: 12px; margin-bottom: 12px;">
+          <div class="form-group">
+            <label for="startDate">Start Date</label>
+            <input id="startDate" name="startDate" data-report-filter="startDate" type="date">
+          </div>
+
+          <div class="form-group">
+            <label for="endDate">End Date</label>
+            <input id="endDate" name="endDate" data-report-filter="endDate" type="date">
+          </div>
+
+          <div class="form-group">
+            <label for="status">Status</label>
+            <select id="status" name="status" data-report-filter="status">
+              <option value="">All</option>
+              <option value="PENDING">Pending</option>
+              <option value="APPROVED">Approved</option>
+              <option value="AWARDED">Awarded</option>
+              <option value="CLOSED">Closed</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="departmentId">Department</label>
+            <input id="departmentId" name="departmentId" data-report-filter="departmentId" type="text" placeholder="Department ID">
+          </div>
+
+          <div class="form-actions" style="align-self: end;">
+            <button id="applyFiltersBtn" type="submit" class="btn btn-soft">Apply Filters</button>
+          </div>
+        </form>
+
+        ${reportsSummaryTable()}
       </section>
     `);
+
+        initializeProcurementBreakdownGrid();
+        wireReportExportEvents();
+        wireReportsFilterEvents();
     } catch (error) {
         PMS.setContent(`<section class="view-section">${PMS.message("error", error.message)}</section>`);
     }
+}
+
+function wireReportExportEvents() {
+  const exportExcelBtn = document.getElementById("exportExcelBtn");
+  const exportPdfBtn = document.getElementById("exportPdfBtn");
+
+  if (exportExcelBtn) {
+    exportExcelBtn.addEventListener("click", function (event) {
+      event.preventDefault();
+      downloadProcurementExcelReport();
+    });
+  }
+
+  if (!exportPdfBtn) {
+    return;
+  }
+
+  exportPdfBtn.addEventListener("click", function (event) {
+    event.preventDefault();
+    downloadProcurementPdfReport();
+  });
+}
+
+async function downloadProcurementExcelReport() {
+  try {
+    const response = await fetch("/api/v1/reports/export/excel", {
+      method: "GET",
+      headers: {
+        Accept: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error("Unable to export Excel report.");
+    }
+
+    const excelBlobRaw = await response.blob();
+    const excelBlob = new Blob([excelBlobRaw], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    });
+
+    const objectUrl = URL.createObjectURL(excelBlob);
+    const downloadLink = document.createElement("a");
+
+    downloadLink.href = objectUrl;
+    downloadLink.download = "procurement-summary.xlsx";
+    document.body.appendChild(downloadLink);
+    downloadLink.click();
+    document.body.removeChild(downloadLink);
+    URL.revokeObjectURL(objectUrl);
+
+    const menu = document.getElementById("exportMenu");
+    if (menu) {
+      menu.style.display = "none";
+    }
+  } catch (error) {
+    if (typeof PMS !== "undefined" && PMS.showToast) {
+      PMS.showToast("error", error.message || "Unable to export Excel report.");
+      return;
+    }
+
+    alert(error.message || "Unable to export Excel report.");
+  }
+}
+
+function collectActiveReportFilters() {
+  const params = new URLSearchParams();
+
+  const knownFilterIds = ["reportSearch", "statusFilter", "dateFrom", "dateTo", "supplierFilter", "departmentFilter", "startDate", "endDate", "status", "departmentId"];
+
+  knownFilterIds.forEach(function (id) {
+    const element = document.getElementById(id);
+
+    if (!element) {
+      return;
+    }
+
+    const value = String(element.value || "").trim();
+
+    if (value) {
+      params.set(id, value);
+    }
+  });
+
+  document.querySelectorAll("[data-report-filter]").forEach(function (element) {
+    const key = String(element.getAttribute("data-report-filter") || "").trim();
+    const value = String(element.value || "").trim();
+
+    if (key && value) {
+      params.set(key, value);
+    }
+  });
+
+  return params;
+}
+
+function wireReportsFilterEvents() {
+  const filterForm = document.getElementById("reportsFilterForm");
+
+  if (!filterForm) {
+    return;
+  }
+
+  filterForm.addEventListener("submit", function (event) {
+    event.preventDefault();
+
+    const queryParams = buildReportsFilterQueryParams(filterForm);
+    initializeProcurementBreakdownGrid(queryParams);
+  });
+}
+
+function buildReportsFilterQueryParams(form) {
+  const params = new URLSearchParams();
+
+  const startDate = String(form.startDate?.value || "").trim();
+  const endDate = String(form.endDate?.value || "").trim();
+  const status = String(form.status?.value || "").trim();
+  const departmentId = String(form.departmentId?.value || "").trim();
+
+  if (startDate) params.set("startDate", startDate);
+  if (endDate) params.set("endDate", endDate);
+  if (status) params.set("status", status);
+  if (departmentId) params.set("departmentId", departmentId);
+
+  return params;
+}
+
+async function downloadProcurementPdfReport() {
+  const queryParams = collectActiveReportFilters();
+  const queryText = queryParams.toString();
+  const requestUrl = queryText
+    ? "/api/v1/reports/export/pdf?" + queryText
+    : "/api/v1/reports/export/pdf";
+
+  try {
+    const response = await fetch(requestUrl, {
+      method: "GET",
+      headers: {
+        Accept: "application/pdf"
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error("Unable to export PDF report.");
+    }
+
+    const pdfBlob = await response.blob();
+    const objectUrl = URL.createObjectURL(pdfBlob);
+    const downloadLink = document.createElement("a");
+
+    downloadLink.href = objectUrl;
+    downloadLink.download = `procurement-report-${new Date().getFullYear()}.pdf`;
+    document.body.appendChild(downloadLink);
+    downloadLink.click();
+    document.body.removeChild(downloadLink);
+    URL.revokeObjectURL(objectUrl);
+
+    const menu = document.getElementById("exportMenu");
+    if (menu) {
+      menu.style.display = "none";
+    }
+  } catch (error) {
+    if (typeof PMS !== "undefined" && PMS.showToast) {
+      PMS.showToast("error", error.message || "Unable to export PDF report.");
+      return;
+    }
+
+    alert(error.message || "Unable to export PDF report.");
+  }
 }
 
 // Toggle presentation framework view visibility container options context
@@ -135,39 +340,135 @@ function triggerDataExport(format) {
     document.getElementById("exportMenu").style.display = "none";
 }
 
-function reportsSummaryTable(details) {
-    if (!Array.isArray(details) || details.length === 0) {
-        return PMS.emptyState("No transaction data", "No matching historical records found to summarize.");
-    }
-
+function reportsSummaryTable() {
     return `
     <div class="table-wrap" style="margin-top: 16px;">
       <table>
         <thead>
           <tr>
-            <th>PO Number</th>
+      <th>Department Spend</th>
+      <th>Order Date</th>
             <th>Supplier Name</th>
-            <th>Total Amount</th>
+      <th>PO Number</th>
+      <th>Total Amount</th>
             <th>Status</th>
-            <th>Date Issued</th>
           </tr>
         </thead>
-        <tbody>
-          ${details.map(function (row) {
-        return `
-              <tr>
-                <td><strong>${PMS.escapeHtml(row.poNumber)}</strong></td>
-                <td>${PMS.escapeHtml(row.supplierName)}</td>
-                <td>${PMS.formatCurrency ? PMS.formatCurrency(row.totalAmount) : row.totalAmount}</td>
-                <td>${PMS.statusBadge ? PMS.statusBadge(row.poStatus) : row.poStatus}</td>
-                <td>${PMS.formatDateTime ? PMS.formatDateTime(row.dateIssued) : row.dateIssued}</td>
-              </tr>
-            `;
-    }).join("")}
-        </tbody>
+    <tbody id="reportsPrimaryTableBody"></tbody>
       </table>
     </div>
+  <div id="reportsPrimaryTableEmpty" style="margin-top: 12px;"></div>
   `;
+}
+
+async function initializeProcurementBreakdownGrid(queryParams) {
+  const tableBody = document.getElementById("reportsPrimaryTableBody");
+  const emptyHost = document.getElementById("reportsPrimaryTableEmpty");
+
+  if (!tableBody || !emptyHost) {
+    return;
+  }
+
+  tableBody.innerHTML = "";
+  emptyHost.innerHTML = "";
+
+  try {
+    const params = queryParams instanceof URLSearchParams ? queryParams : new URLSearchParams();
+    const queryText = params.toString();
+    const requestUrl = queryText
+      ? "/api/v1/reports/procurement-breakdown?" + queryText
+      : "/api/v1/reports/procurement-breakdown";
+
+    const response = await fetch(requestUrl, {
+      method: "GET",
+      headers: {
+        Accept: "application/json"
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error("Unable to load procurement breakdown data.");
+    }
+
+    const payload = await response.json();
+    const rows = extractBreakdownRows(payload);
+
+    currentReportDetails = rows;
+
+    if (!rows.length) {
+      emptyHost.innerHTML = PMS.emptyState("No transaction data", "No matching historical records found to summarize.");
+      return;
+    }
+
+    rows.forEach(function (item) {
+      tableBody.appendChild(createProcurementBreakdownRow(item));
+    });
+  } catch (error) {
+    emptyHost.innerHTML = PMS.message("error", error.message || "Unable to load procurement breakdown data.");
+  }
+}
+
+function extractBreakdownRows(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.data)) return payload.data;
+  if (Array.isArray(payload?.items)) return payload.items;
+  if (Array.isArray(payload?.content)) return payload.content;
+  if (Array.isArray(payload?.breakdown)) return payload.breakdown;
+  if (Array.isArray(payload?.reports)) return payload.reports;
+  return [];
+}
+
+function createProcurementBreakdownRow(item) {
+  const tr = document.createElement("tr");
+
+  const departmentSpend =
+    item.departmentSpend ??
+    item.spendAmount ??
+    item.totalAmount ??
+    0;
+
+  const orderDate =
+    item.orderDate ||
+    item.dateIssued ||
+    item.createdAt ||
+    "-";
+
+  const supplierName =
+    item.supplierName ||
+    item.supplier?.name ||
+    "-";
+
+  const poNumber =
+    item.poNumber ||
+    item.purchaseOrderNumber ||
+    "-";
+
+  const totalAmount =
+    item.totalAmount ??
+    item.poTotal ??
+    departmentSpend;
+
+  const status =
+    item.status ||
+    item.poStatus ||
+    "-";
+
+  const cells = [
+    PMS.formatCurrency ? PMS.formatCurrency(Number(departmentSpend) || 0) : String(departmentSpend ?? 0),
+    PMS.formatDateTime ? PMS.formatDateTime(orderDate) : String(orderDate),
+    String(supplierName),
+    String(poNumber),
+    PMS.formatCurrency ? PMS.formatCurrency(Number(totalAmount) || 0) : String(totalAmount ?? 0),
+    String(status)
+  ];
+
+  cells.forEach(function (value) {
+    const td = document.createElement("td");
+    td.textContent = value;
+    tr.appendChild(td);
+  });
+
+  return tr;
 }
 
 async function loadAuditLogs() {

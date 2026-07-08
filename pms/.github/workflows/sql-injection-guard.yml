@@ -1,0 +1,28 @@
+name: SQL Injection Guard
+
+on:
+  pull_request:
+    branches:
+      - "**"
+  workflow_dispatch:
+
+jobs:
+  sqli-guard:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+      - name: Static guard for concatenated SQL/JPQL
+        run: bash scripts/security/sql_injection_guard.sh
+
+      - name: Run SQL injection repository safety test
+        run: ./mvnw -B -Dtest=SqlInjectionRepositorySafetyTest test

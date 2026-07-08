@@ -8,6 +8,9 @@ document.addEventListener("DOMContentLoaded", function () {
   loadRfqDetail();
 });
 
+let currentRecommendedSupplierId = null;
+let currentAwardRfqId = null;
+
 async function loadRfqDetail() {
   PMS.showLoading("Loading RFQ detail...");
 
@@ -46,6 +49,7 @@ async function loadRfqDetail() {
     const linkedRequisition = findLinkedRequisition(rfq, requisitions);
     const linkedPurchaseOrder = findLinkedPurchaseOrder(rfq, purchaseOrders);
     const quotations = getRfqQuotations(rfq, rfqId);
+    currentAwardRfqId = rfq.id;
 
     PMS.setContent(`
       <section class="view-section">
@@ -107,6 +111,17 @@ async function loadRfqDetail() {
         ${quotationsTable(quotations)}
       </section>
 
+      <section class="view-section" id="evaluationPane">
+        <div class="section-header">
+          <div>
+            <h2>Evaluation Scores</h2>
+            <p>Backend-calculated weighted scoring for submitted quotations.</p>
+          </div>
+        </div>
+
+        ${evaluationScoresSection()}
+      </section>
+
       <section class="view-section">
         <div class="section-header">
           <div>
@@ -118,6 +133,12 @@ async function loadRfqDetail() {
         ${awardStatus(rfq, quotations, linkedPurchaseOrder)}
       </section>
     `);
+
+    wireContractAwardForm();
+
+    await loadRfqEvaluationScores(rfq.id);
+
+    wireRfqSubmissionHandler(rfq);
   } catch (error) {
     PMS.setContent(`<section class="view-section">${PMS.message("error", error.message)}</section>`);
   }
@@ -368,6 +389,183 @@ function quotationsTable(quotations) {
   `;
 }
 
+function evaluationScoresSection() {
+  return `
+    <div id="evaluationScoresEmpty" class="message info">Loading evaluation scores...</div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Supplier</th>
+            <th>Quote</th>
+            <th>Technical Score</th>
+            <th>Financial Score</th>
+            <th>Weighted Score</th>
+          </tr>
+        </thead>
+        <tbody id="evaluationScoresTableBody"></tbody>
+      </table>
+    </div>
+  `;
+}
+
+async function loadRfqEvaluationScores(rfqId) {
+  const tableBody = document.getElementById("evaluationScoresTableBody");
+  const emptyHost = document.getElementById("evaluationScoresEmpty");
+
+  if (!rfqId || !tableBody || !emptyHost) {
+    return;
+  }
+
+  try {
+    const response = await fetch(`/api/v1/rfqs/${encodeURIComponent(rfqId)}/evaluation-scores`, {
+      method: "GET",
+      headers: {
+        Accept: "application/json"
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error("Unable to load evaluation scores.");
+    }
+
+    const payload = await response.json();
+    const rows = normalizeEvaluationScoreRows(payload);
+    const recommended = findRecommendedEvaluationRow(rows);
+
+    if (!rows.length) {
+      tableBody.innerHTML = "";
+      emptyHost.textContent = "No evaluation scores available for this RFQ.";
+      renderAwardSupplierOptions([], null);
+      populatePrimaryAwardSelection(null);
+      return;
+    }
+
+    tableBody.innerHTML = rows.map(function (row, index) {
+      const isRecommended =
+        recommended &&
+        String(getEvaluationRowId(row, index)) === String(getEvaluationRowId(recommended, rows.indexOf(recommended)));
+
+      return `
+        <tr ${isRecommended ? "style=\"background:#ecfdf3;\"" : ""}>
+          <td>
+            ${PMS.escapeHtml(row.supplierName || row.supplier || `Supplier ${index + 1}`)}
+            ${isRecommended ? recommendationBadgeHtml() : ""}
+          </td>
+          <td>${PMS.escapeHtml(row.quoteNumber || row.quotationNumber || row.quoteId || "-")}</td>
+          <td>${PMS.escapeHtml(formatScoreForScreen(row.technicalScore, 2))}</td>
+          <td>${PMS.escapeHtml(formatScoreForScreen(row.financialScore, 2))}</td>
+          <td><strong>${PMS.escapeHtml(formatScoreForScreen(row.weightedScore, 4))}</strong></td>
+        </tr>
+      `;
+    }).join("");
+
+    renderAwardSupplierOptions(rows, recommended);
+    populatePrimaryAwardSelection(recommended);
+    emptyHost.textContent = "";
+  } catch (error) {
+    tableBody.innerHTML = "";
+    emptyHost.textContent = "Unable to load evaluation scores. Please try again.";
+    renderAwardSupplierOptions([], null);
+    populatePrimaryAwardSelection(null);
+  }
+}
+
+function normalizeEvaluationScoreRows(payload) {
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+
+  if (Array.isArray(payload?.matrix)) {
+    return payload.matrix;
+  }
+
+  if (Array.isArray(payload?.evaluationScores)) {
+    return payload.evaluationScores;
+  }
+
+  if (Array.isArray(payload?.data)) {
+    return payload.data;
+  }
+
+  if (Array.isArray(payload?.data?.matrix)) {
+    return payload.data.matrix;
+  }
+
+  return [];
+}
+
+function recommendationBadgeHtml() {
+  return "<span style=\"display:inline-block;margin-left:8px;padding:2px 8px;border-radius:999px;background:#166534;color:#ffffff;font-size:12px;font-weight:700;\">Recommended</span>";
+}
+
+function getEvaluationRowId(row, index) {
+  return row.id || row.quoteId || row.quotationId || row.quoteNumber || row.quotationNumber || index;
+}
+
+function findRecommendedEvaluationRow(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return null;
+  }
+
+  return rows.reduce(function (best, current) {
+    const bestScore = best ? Number(best.weightedScore) : Number.NEGATIVE_INFINITY;
+    const currentScore = Number(current.weightedScore);
+
+    if (!Number.isFinite(currentScore)) {
+      return best;
+    }
+
+    if (!Number.isFinite(bestScore) || currentScore > bestScore) {
+      return current;
+    }
+
+    return best;
+  }, null) || rows[0];
+}
+
+function populatePrimaryAwardSelection(recommendedRow) {
+  const supplierField = document.getElementById("primaryAwardSupplier");
+  const quoteField = document.getElementById("primaryAwardQuote");
+  const scoreField = document.getElementById("primaryAwardWeightedScore");
+  const statusField = document.getElementById("primaryAwardSelectionStatus");
+
+  if (!supplierField || !quoteField || !scoreField || !statusField) {
+    return;
+  }
+
+  if (!recommendedRow) {
+    currentRecommendedSupplierId = null;
+    supplierField.value = "";
+    quoteField.value = "";
+    scoreField.value = "";
+    statusField.textContent = "No recommendation available yet.";
+    return;
+  }
+
+  currentRecommendedSupplierId = String(
+    recommendedRow.supplierId ||
+    recommendedRow.supplier?.id ||
+    recommendedRow.supplier?.supplierId ||
+    ""
+  ) || null;
+
+  supplierField.value = recommendedRow.supplierName || recommendedRow.supplier || "";
+  quoteField.value = recommendedRow.quoteNumber || recommendedRow.quotationNumber || recommendedRow.quoteId || "";
+  scoreField.value = formatScoreForScreen(recommendedRow.weightedScore, 4);
+  statusField.textContent = "Primary award fields were auto-populated from the highest weighted score.";
+}
+
+function formatScoreForScreen(value, scale) {
+  const numericValue = Number(value);
+
+  if (!Number.isFinite(numericValue)) {
+    return Number(0).toFixed(scale);
+  }
+
+  return numericValue.toFixed(scale);
+}
+
 function getSupplierName(quote) {
   return (
     quote.supplierName ||
@@ -414,6 +612,7 @@ function awardStatus(rfq, quotations, purchaseOrder) {
         <p>This RFQ has progressed to purchase order stage.</p>
         <a class="btn btn-primary" href="/purchase-orders.html">Open Purchase Orders</a>
       </div>
+      ${primaryAwardSelectionContainer()}
     `;
   }
 
@@ -441,6 +640,7 @@ function awardStatus(rfq, quotations, purchaseOrder) {
           </div>
         </div>
       </div>
+      ${primaryAwardSelectionContainer()}
     `;
   }
 
@@ -450,7 +650,260 @@ function awardStatus(rfq, quotations, purchaseOrder) {
       <p>This RFQ has not yet been awarded. Continue the process from the RFQ page.</p>
       <a class="btn btn-soft" href="/rfqs.html">Open RFQs</a>
     </div>
+    ${primaryAwardSelectionContainer()}
   `;
+}
+
+function primaryAwardSelectionContainer() {
+  return `
+    <div class="view-section" id="primaryAwardSelectionContainer">
+      <div class="section-header">
+        <div>
+          <h2>Primary Award Selection</h2>
+          <p>Auto-filled with the current top recommendation from weighted scoring.</p>
+        </div>
+      </div>
+
+      <div class="detail-list">
+        <div>
+          <span>Recommended Supplier</span>
+          <strong><input id="primaryAwardSupplier" type="text" readonly placeholder="Will auto-populate" /></strong>
+        </div>
+        <div>
+          <span>Quote Reference</span>
+          <strong><input id="primaryAwardQuote" type="text" readonly placeholder="Will auto-populate" /></strong>
+        </div>
+        <div>
+          <span>Weighted Score</span>
+          <strong><input id="primaryAwardWeightedScore" type="text" readonly placeholder="Will auto-populate" /></strong>
+        </div>
+      </div>
+
+      <p id="primaryAwardSelectionStatus" class="muted">Awaiting evaluation score data.</p>
+
+      <form id="contractAwardForm" class="form-grid" style="margin-top:12px;">
+        <div class="form-group">
+          <label for="awardSupplierId">Award Supplier</label>
+          <select id="awardSupplierId" name="supplierId" required>
+            <option value="">Select supplier</option>
+          </select>
+        </div>
+
+        <div class="form-group full-width">
+          <label for="overrideReason">Override Reason</label>
+          <textarea id="overrideReason" name="overrideReason" rows="3" placeholder="Required when selecting a supplier other than the recommended one."></textarea>
+        </div>
+
+        <div id="contractAwardError" class="full-width"></div>
+
+        <div class="form-actions full-width">
+          <button class="btn btn-primary" type="submit">Submit Contract Award</button>
+        </div>
+      </form>
+    </div>
+  `;
+}
+
+function wireContractAwardForm() {
+  const form = document.getElementById("contractAwardForm");
+
+  if (!form) {
+    return;
+  }
+
+  form.addEventListener("submit", handleContractAwardSubmit);
+}
+
+function renderAwardSupplierOptions(rows, recommendedRow) {
+  const select = document.getElementById("awardSupplierId");
+
+  if (!select) {
+    return;
+  }
+
+  if (!Array.isArray(rows) || rows.length === 0) {
+    select.innerHTML = "<option value=\"\">Select supplier</option>";
+    return;
+  }
+
+  const options = rows.map(function (row, index) {
+    const supplierId = String(
+      row.supplierId ||
+      row.supplier?.id ||
+      row.supplier?.supplierId ||
+      ""
+    );
+
+    const supplierName = row.supplierName || row.supplier || `Supplier ${index + 1}`;
+    const scoreText = formatScoreForScreen(row.weightedScore, 4);
+    const isRecommended =
+      recommendedRow &&
+      String(supplierId) === String(
+        recommendedRow.supplierId ||
+        recommendedRow.supplier?.id ||
+        recommendedRow.supplier?.supplierId ||
+        ""
+      );
+
+    return `
+      <option value="${PMS.escapeHtml(supplierId)}" ${isRecommended ? "selected" : ""}>
+        ${PMS.escapeHtml(supplierName)} | Score ${PMS.escapeHtml(scoreText)} ${isRecommended ? "(Recommended)" : ""}
+      </option>
+    `;
+  }).join("");
+
+  select.innerHTML = `<option value="">Select supplier</option>${options}`;
+}
+
+async function handleContractAwardSubmit(event) {
+  event.preventDefault();
+
+  clearContractAwardError();
+
+  const form = event.currentTarget;
+  const selectedSupplierId = String(form.querySelector("[name='supplierId']")?.value || "").trim();
+  const topSupplierId = String(currentRecommendedSupplierId || "").trim();
+  const overrideReason = String(form.querySelector("[name='overrideReason']")?.value || "").trim();
+
+  if (!selectedSupplierId) {
+    showContractAwardError("Please select a supplier before submitting the award.");
+    return;
+  }
+
+  if (topSupplierId && selectedSupplierId !== topSupplierId && !overrideReason) {
+    showContractAwardError("An explicit justification reason is required to override the highest-scoring supplier recommendation.");
+    return;
+  }
+
+  const submitButton = form.querySelector("button[type='submit']");
+  const originalText = submitButton ? submitButton.textContent : "";
+
+  if (submitButton) {
+    submitButton.disabled = true;
+    submitButton.textContent = "Submitting...";
+  }
+
+  try {
+    const response = await fetch("/api/awards", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json"
+      },
+      body: JSON.stringify({
+        rfqId: Number(currentAwardRfqId),
+        supplierId: Number(selectedSupplierId),
+        recommendedSupplierId: topSupplierId ? Number(topSupplierId) : null,
+        overrideJustification: selectedSupplierId !== topSupplierId ? overrideReason : null
+      })
+    });
+
+    if (!response.ok) {
+      const errorInfo = await readErrorResponseBody(response);
+      throw new Error(errorInfo.message || "Unable to submit contract award.");
+    }
+
+    await triggerPurchaseOrderGenerationAfterAward(
+      Number(currentAwardRfqId),
+      Number(selectedSupplierId)
+    );
+
+    if (typeof PMS !== "undefined" && PMS.showToast) {
+      PMS.showToast("success", "Contract award submitted successfully.");
+    }
+  } catch (error) {
+    showContractAwardError(error.message || "Unable to submit contract award.");
+  } finally {
+    if (submitButton) {
+      submitButton.disabled = false;
+      submitButton.textContent = originalText;
+    }
+  }
+}
+
+async function triggerPurchaseOrderGenerationAfterAward(currentRfqId, selectedSupplierId) {
+  const poResponse = await fetch("/api/v1/purchase-orders/generate", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json"
+    },
+    body: JSON.stringify({
+      rfqId: currentRfqId,
+      supplierId: selectedSupplierId
+    })
+  });
+
+  if (poResponse.status !== 201) {
+    const errorInfo = await readErrorResponseBody(poResponse);
+    throw new Error(errorInfo.message || "Award saved but purchase order generation failed.");
+  }
+
+  const poBody = await readSuccessfulResponseBody(poResponse);
+  const poReference = extractPurchaseOrderReference(poBody);
+  const statusHost = document.getElementById("primaryAwardSelectionStatus");
+
+  if (statusHost) {
+    statusHost.textContent = poReference
+      ? `Purchase order provisioned successfully. Reference: ${poReference}.`
+      : "Purchase order provisioned successfully.";
+  }
+
+  return poReference;
+}
+
+async function readSuccessfulResponseBody(response) {
+  const contentType = response.headers.get("content-type") || "";
+
+  try {
+    if (contentType.includes("application/json")) {
+      return await response.json();
+    }
+
+    const text = await response.text();
+    return text || null;
+  } catch (error) {
+    return null;
+  }
+}
+
+function extractPurchaseOrderReference(body) {
+  if (!body) {
+    return null;
+  }
+
+  if (typeof body === "string") {
+    return body.trim() || null;
+  }
+
+  return (
+    body.purchaseOrderReference ||
+    body.poReference ||
+    body.reference ||
+    body.purchaseOrderNumber ||
+    body.poNumber ||
+    body.sequence ||
+    body.id ||
+    null
+  );
+}
+
+function showContractAwardError(message) {
+  const host = document.getElementById("contractAwardError");
+
+  if (!host) {
+    return;
+  }
+
+  host.innerHTML = `<div class="message error" role="alert">${PMS.escapeHtml(message)}</div>`;
+}
+
+function clearContractAwardError() {
+  const host = document.getElementById("contractAwardError");
+
+  if (host) {
+    host.innerHTML = "";
+  }
 }
 
 function findRecommendedQuotation(quotations) {
@@ -478,4 +931,166 @@ function findRecommendedQuotation(quotations) {
   });
 
   return withScores[0].quote;
+}
+
+function wireRfqSubmissionHandler(rfq) {
+  const entry = locateRfqSubmissionEntry();
+  const form = entry.form;
+  const submitButton = entry.button || (form ? form.querySelector("button[type='submit']") : null);
+
+  if (!form || !submitButton) {
+    return;
+  }
+
+  const submissionDeadlineRaw =
+    rfq.submissionDeadline ||
+    rfq.closingDate ||
+    rfq.deadline ||
+    rfq.validUntil ||
+    null;
+
+  form.addEventListener("submit", function (event) {
+    event.preventDefault();
+    submitRfqResponse(form, submitButton, rfq, submissionDeadlineRaw);
+  });
+}
+
+function locateRfqSubmissionEntry() {
+  let form =
+    document.querySelector("#rfqSubmissionForm") ||
+    document.querySelector("#quotationForm") ||
+    document.querySelector("form[data-rfq-submit]") ||
+    document.querySelector("form[action*='submission']");
+
+  const button =
+    document.querySelector("[data-submit-rfq-response]") ||
+    document.querySelector("#submitQuoteBtn") ||
+    document.querySelector("#submitQuotationBtn") ||
+    (form ? form.querySelector("button[type='submit']") : null);
+
+  if (!form && button) {
+    form = button.closest("form");
+  }
+
+  return { form: form, button: button };
+}
+
+async function submitRfqResponse(form, submitButton, rfq, submissionDeadlineRaw) {
+  clearSubmissionBanner(form);
+
+  const deadline = parseSubmissionDeadline(submissionDeadlineRaw);
+  if (deadline && new Date() > deadline) {
+    showSubmissionBanner(form, "Submission Rejected: The deadline for this RFQ has passed.");
+    return;
+  }
+
+  const payload = Object.fromEntries(new FormData(form).entries());
+
+  submitButton.disabled = true;
+  const originalText = submitButton.textContent;
+  submitButton.textContent = "Submitting...";
+
+  try {
+    const response = await fetch(`/api/v1/rfqs/${encodeURIComponent(rfq.id)}/submissions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json"
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      const errorInfo = await readErrorResponseBody(response);
+      const combined = `${errorInfo.message || ""} ${errorInfo.raw || ""}`;
+      const deadlineRejected =
+        (response.status === 400 || response.status === 403) &&
+        /deadline|closing|expired|late|passed/i.test(combined);
+
+      if (deadlineRejected) {
+        showSubmissionBanner(form, "Submission Rejected: The deadline for this RFQ has passed.");
+        return;
+      }
+
+      throw new Error(errorInfo.message || "Unable to submit RFQ response.");
+    }
+
+    if (typeof PMS !== "undefined" && PMS.showToast) {
+      PMS.showToast("success", "Response submitted successfully.");
+    }
+  } catch (error) {
+    showSubmissionBanner(form, error.message || "Unable to submit RFQ response.");
+  } finally {
+    submitButton.disabled = false;
+    submitButton.textContent = originalText;
+  }
+}
+
+function parseSubmissionDeadline(rawValue) {
+  if (!rawValue) {
+    return null;
+  }
+
+  if (typeof rawValue === "string" && /^\d{4}-\d{2}-\d{2}$/.test(rawValue)) {
+    return new Date(`${rawValue}T23:59:59.999`);
+  }
+
+  const parsed = new Date(rawValue);
+
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+async function readErrorResponseBody(response) {
+  const contentType = response.headers.get("content-type") || "";
+
+  try {
+    if (contentType.includes("application/json")) {
+      const json = await response.json();
+
+      return {
+        message: json.message || json.error || json.details || json.title || "Request failed.",
+        raw: JSON.stringify(json)
+      };
+    }
+
+    const text = await response.text();
+
+    return {
+      message: text || "Request failed.",
+      raw: text || ""
+    };
+  } catch (error) {
+    return {
+      message: "Request failed.",
+      raw: ""
+    };
+  }
+}
+
+function showSubmissionBanner(form, text) {
+  let banner = form.querySelector("#rfqSubmissionWarningBanner");
+
+  if (!banner) {
+    banner = document.createElement("div");
+    banner.id = "rfqSubmissionWarningBanner";
+    banner.setAttribute("role", "alert");
+    banner.style.background = "#fdecea";
+    banner.style.border = "2px solid #d93025";
+    banner.style.color = "#7f1d1d";
+    banner.style.padding = "12px 14px";
+    banner.style.marginBottom = "12px";
+    banner.style.fontWeight = "700";
+    banner.style.borderRadius = "8px";
+    form.prepend(banner);
+  }
+
+  banner.textContent = text;
+}
+
+function clearSubmissionBanner(form) {
+  const banner = form.querySelector("#rfqSubmissionWarningBanner");
+
+  if (banner) {
+    banner.remove();
+  }
 }

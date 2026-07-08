@@ -75,6 +75,7 @@ public final class ProcurementDtos {
         }
 
         public record RfqRequest(@NotNull Long requisitionId, @Future Instant submissionDeadline,
+                        @NotEmpty List<@NotNull Long> supplierIds,
                         @Min(0) @Max(100) int priceWeight, @Min(0) @Max(100) int deliveryWeight,
                         @Min(0) @Max(100) int qualityWeight, @Min(0) @Max(100) int termsWeight,
                         @Min(0) @Max(100) int performanceWeight) {

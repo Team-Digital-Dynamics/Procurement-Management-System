@@ -21,7 +21,7 @@ async function loadRfqs(messageHtml) {
     PMS.setContent(`
       ${messageHtml || ""}
 
-      ${canManage ? rfqFormSection(requisitions) : ""}
+      ${canManage ? rfqFormSection(requisitions, suppliers) : ""}
 
       ${canManage ? quotationFormSection(rfqs, suppliers) : ""}
 
@@ -72,10 +72,15 @@ async function loadRfqs(messageHtml) {
   }
 }
 
-function rfqFormSection(requisitions) {
+function rfqFormSection(requisitions, suppliers) {
   const approvedRequisitions = (requisitions || []).filter(function (item) {
     return String(item.status || "").toUpperCase() === "APPROVED";
   });
+  const approvedSuppliers = (suppliers || []).filter(function (item) {
+    return String(item.status || "").toUpperCase() === "APPROVED";
+  });
+
+  const formDisabled = approvedRequisitions.length === 0 || approvedSuppliers.length === 0;
 
   return `
     <section class="view-section">
@@ -88,6 +93,10 @@ function rfqFormSection(requisitions) {
 
       ${approvedRequisitions.length === 0
         ? PMS.message("error", "No approved requisitions are available yet. A requisition must be approved before an RFQ can be created.")
+        : ""}
+
+      ${approvedSuppliers.length === 0
+        ? PMS.message("error", "No approved suppliers are available. Add/approve at least one supplier before creating an RFQ.")
         : ""}
 
       <form id="rfqForm" class="auth-form">
@@ -105,6 +114,16 @@ function rfqFormSection(requisitions) {
           <div class="form-group">
             <label for="submissionDeadline">Submission Deadline</label>
             <input id="submissionDeadline" name="submissionDeadline" type="datetime-local" required>
+          </div>
+
+          <div class="form-group" style="grid-column: 1 / -1;">
+            <label for="supplierIds">Invite Suppliers</label>
+            <select id="supplierIds" name="supplierIds" multiple required ${formDisabled ? "disabled" : ""}>
+              ${approvedSuppliers.map(function (supplier) {
+                return `<option value="${PMS.escapeHtml(supplier.id)}">${PMS.escapeHtml(supplier.name)} (${PMS.escapeHtml(supplier.contactEmail || "no-email")})</option>`;
+              }).join("")}
+            </select>
+            <small style="display:block;margin-top:6px;color:#6c7a91;">Hold Ctrl/Cmd to select multiple suppliers.</small>
           </div>
 
           <div class="form-group">
@@ -134,7 +153,7 @@ function rfqFormSection(requisitions) {
         </div>
 
         <div class="action-row">
-          <button class="btn btn-primary" type="submit" ${approvedRequisitions.length === 0 ? "disabled" : ""}>
+          <button class="btn btn-primary" type="submit" ${formDisabled ? "disabled" : ""}>
             Create RFQ
           </button>
         </div>
@@ -355,11 +374,24 @@ async function createRfq(event) {
 
   const form = event.target;
   const data = PMS.formDataToObject(form);
+  const selectedSupplierIds = Array.from(form.querySelector("#supplierIds")?.selectedOptions || [])
+    .map(function (option) {
+      return Number(option.value);
+    })
+    .filter(function (id) {
+      return Number.isFinite(id) && id > 0;
+    });
+
+  if (selectedSupplierIds.length === 0) {
+    loadRfqs(PMS.message("error", "Please select at least one approved supplier to invite."));
+    return;
+  }
 
   try {
     await PMS.postJson("/api/rfqs", {
       requisitionId: Number(data.requisitionId),
       submissionDeadline: new Date(data.submissionDeadline).toISOString(),
+      supplierIds: selectedSupplierIds,
       priceWeight: Number(data.priceWeight),
       deliveryWeight: Number(data.deliveryWeight),
       qualityWeight: Number(data.qualityWeight),
