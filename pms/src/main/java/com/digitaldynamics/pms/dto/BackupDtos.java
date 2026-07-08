@@ -36,4 +36,16 @@ public final class BackupDtos {
             int statementsExecuted
     ) {
     }
+
+    public record BackupVerificationResult(
+            String fileName,
+            boolean checksumMatches,
+            String storedChecksum,
+            String actualChecksum,
+            long sizeBytes,
+            Instant verifiedAt,
+            int statementsFound,
+            int insertStatementsFound
+    ) {
+    }
 }

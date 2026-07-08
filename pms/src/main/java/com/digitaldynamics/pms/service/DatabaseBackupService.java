@@ -3,6 +3,7 @@ package com.digitaldynamics.pms.service;
 import com.digitaldynamics.pms.config.BackupProperties;
 import com.digitaldynamics.pms.dto.BackupDtos.BackupResult;
 import com.digitaldynamics.pms.dto.BackupDtos.BackupSummary;
+import com.digitaldynamics.pms.dto.BackupDtos.BackupVerificationResult;
 import com.digitaldynamics.pms.dto.BackupDtos.RestoreResult;
 import java.io.BufferedWriter;
 import java.io.IOException;
@@ -95,7 +96,10 @@ public class DatabaseBackupService {
     @Transactional
     public RestoreResult restoreBackup(String fileName) {
         Path backupFile = resolveBackupFile(fileName);
-        verifyChecksum(backupFile);
+        BackupVerificationResult verification = verifyBackup(fileName);
+        if (!verification.checksumMatches()) {
+            throw new IllegalStateException("Backup checksum verification failed");
+        }
 
         try {
             String sql = Files.readString(backupFile, StandardCharsets.UTF_8);
@@ -129,13 +133,42 @@ public class DatabaseBackupService {
 
                 return new RestoreResult(
                         backupFile.getFileName().toString(),
-                        readStoredChecksum(backupFile),
+                        verification.actualChecksum(),
                         Instant.now(),
                         executed
                 );
             }
         } catch (IOException | SQLException ex) {
             throw new IllegalStateException("Database restore failed", ex);
+        }
+    }
+
+    public BackupVerificationResult verifyBackup(String fileName) {
+        Path backupFile = resolveBackupFile(fileName);
+        try {
+            String storedChecksum = readStoredChecksum(backupFile);
+            String actualChecksum = sha256(backupFile);
+            String sql = Files.readString(backupFile, StandardCharsets.UTF_8);
+            List<String> statements = splitStatements(sql).stream()
+                    .map(this::removeLineComments)
+                    .filter(this::isExecutableStatement)
+                    .toList();
+            int insertStatements = (int) statements.stream()
+                    .filter(statement -> statement.stripLeading().toUpperCase().startsWith("INSERT INTO"))
+                    .count();
+
+            return new BackupVerificationResult(
+                    backupFile.getFileName().toString(),
+                    storedChecksum.equalsIgnoreCase(actualChecksum),
+                    storedChecksum,
+                    actualChecksum,
+                    Files.size(backupFile),
+                    Instant.now(),
+                    statements.size(),
+                    insertStatements
+            );
+        } catch (IOException ex) {
+            throw new IllegalStateException("Unable to verify database backup", ex);
         }
     }
 
@@ -303,14 +336,6 @@ public class DatabaseBackupService {
 
     private Path checksumFile(Path backupFile) {
         return backupFile.resolveSibling(backupFile.getFileName() + ".sha256");
-    }
-
-    private void verifyChecksum(Path backupFile) {
-        String stored = readStoredChecksum(backupFile);
-        String actual = sha256(backupFile);
-        if (!stored.equalsIgnoreCase(actual)) {
-            throw new IllegalStateException("Backup checksum verification failed");
-        }
     }
 
     private String readStoredChecksum(Path backupFile) {

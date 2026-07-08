@@ -39,6 +39,12 @@ class DatabaseBackupServiceTests {
         assertThat(manualBackup.rowCount()).isPositive();
         assertThat(scheduledBackup.source()).isEqualTo("SCHEDULED");
 
+        var verification = backupService.verifyBackup(manualBackup.fileName());
+        assertThat(verification.checksumMatches()).isTrue();
+        assertThat(verification.actualChecksum()).isEqualTo(manualBackup.checksum());
+        assertThat(verification.statementsFound()).isPositive();
+        assertThat(verification.insertStatementsFound()).isPositive();
+
         jdbcTemplate.update("UPDATE users SET full_name = ? WHERE email = ?",
                 "Changed After Backup", "admin@digitaldynamics.co.za");
 

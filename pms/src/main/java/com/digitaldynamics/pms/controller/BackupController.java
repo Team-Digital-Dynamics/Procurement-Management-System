@@ -3,6 +3,7 @@ package com.digitaldynamics.pms.controller;
 import com.digitaldynamics.pms.dto.ApiResponse;
 import com.digitaldynamics.pms.dto.BackupDtos.BackupResult;
 import com.digitaldynamics.pms.dto.BackupDtos.BackupSummary;
+import com.digitaldynamics.pms.dto.BackupDtos.BackupVerificationResult;
 import com.digitaldynamics.pms.dto.BackupDtos.RestoreRequest;
 import com.digitaldynamics.pms.dto.BackupDtos.RestoreResult;
 import com.digitaldynamics.pms.security.CurrentUser;
@@ -13,6 +14,7 @@ import java.util.List;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -33,6 +35,14 @@ public class BackupController {
     @PreAuthorize("hasRole('ADMIN')")
     ApiResponse<List<BackupSummary>> listBackups() {
         return ApiResponse.success(backupService.listBackups(), "Backups loaded");
+    }
+
+    @GetMapping("/{fileName}/verify")
+    @PreAuthorize("hasRole('ADMIN')")
+    ApiResponse<BackupVerificationResult> verifyBackup(@PathVariable String fileName) {
+        BackupVerificationResult result = backupService.verifyBackup(fileName);
+        String message = result.checksumMatches() ? "Backup verification successful" : "Backup verification failed";
+        return ApiResponse.success(result, message);
     }
 
     @PostMapping("/manual")

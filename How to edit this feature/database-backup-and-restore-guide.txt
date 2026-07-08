@@ -8,6 +8,7 @@ Changes included:
 - Added admin-only backup endpoints under /api/backups.
 - Added manual database backup creation with SQL export and SHA-256 checksum file.
 - Added scheduled daily backup job, configurable through application.yml or environment variables.
+- Added backup verification support so backup integrity can be checked before restore.
 - Added restore support that verifies checksum before restoring data.
 - Added audit logging for manual backup, scheduled backup, and restore actions.
 - Added backup configuration properties for directory, cron schedule, and scheduler enablement.
@@ -29,6 +30,7 @@ How to edit this feature:
    - The backup endpoint paths.
    - The response messages.
    - The admin authorization rules.
+   - The backup verification endpoint.
    - The audit log messages for manual backup and restore.
 
 2. Edit the backup and restore logic:
@@ -39,6 +41,7 @@ How to edit this feature:
    - How SQL backup files are generated.
    - Which tables are included or excluded.
    - How checksums are created or verified.
+   - How backup SQL is inspected before restore.
    - How restore statements are executed.
    - How referential integrity is disabled and enabled during restore.
 
@@ -105,6 +108,15 @@ Scheduled backup:
 5. A .sql backup file and .sha256 checksum file are created.
 6. The system records an audit log entry with actor SYSTEM.
 
+Verify backup:
+1. An admin sends a GET request to /api/backups/{fileName}/verify.
+2. DatabaseBackupService verifies that the file is inside the configured backup directory.
+3. It reads the stored checksum from the matching .sha256 file.
+4. It recalculates the current SHA-256 checksum of the .sql file.
+5. It compares the stored checksum and actual checksum.
+6. It inspects the backup SQL and counts executable statements and INSERT statements.
+7. The API returns whether the checksum matches, both checksum values, file size, statement count, insert count, and verification timestamp.
+
 Restore backup:
 1. An admin sends a POST request to /api/backups/restore.
 2. The request body must include the backup file name.
@@ -131,6 +143,9 @@ GET /api/backups
 
 Create manual backup:
 POST /api/backups/manual
+
+Verify backup:
+GET /api/backups/{fileName}/verify
 
 Restore backup:
 POST /api/backups/restore
@@ -171,4 +186,6 @@ BUILD SUCCESS
 The backup test confirms:
 - Manual backup can be created.
 - Scheduled backup path can be created.
+- Backup checksum can be verified before restore.
+- Backup SQL contains executable INSERT statements.
 - Restore verifies checksum and restores database values.
