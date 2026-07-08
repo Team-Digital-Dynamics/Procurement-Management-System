@@ -42,7 +42,7 @@ pms:
   security:
     force-https: false
   mail:
-    test-recipient: ${PMS_MAIL_TEST_RECIPIENT:admindigitaldynamics@gmail.com}
+    test-recipient: ${PMS_MAIL_TEST_RECIPIENT:dale.smith.workapp01@gmail.com}
   backup:
     directory: ${PMS_BACKUP_DIRECTORY:backups}
     cron: ${PMS_BACKUP_CRON:0 0 2 * * *}
