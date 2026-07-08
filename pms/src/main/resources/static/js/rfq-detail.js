@@ -269,7 +269,7 @@ function rfqSummary(rfq, linkedRequisition) {
       </div>
 
       <div>
-        <span>Closing Date</span>
+        <span>Submission Deadline</span>
         <strong>${formatPossibleDate(rfq.submissionDeadline || rfq.closingDate || rfq.deadline || rfq.validUntil)}</strong>
       </div>
     </div>

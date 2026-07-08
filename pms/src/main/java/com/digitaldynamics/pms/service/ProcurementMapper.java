@@ -18,52 +18,79 @@ import java.util.List;
 
 @Component
 public class ProcurementMapper {
-    public SupplierResponse toSupplierResponse(Supplier supplier) {
-        return new SupplierResponse(supplier.getId(), supplier.getName(), supplier.getContactEmail(),
-                supplier.getStatus(), supplier.getPerformanceScore());
-    }
+        public SupplierResponse toSupplierResponse(Supplier supplier) {
+                return new SupplierResponse(supplier.getId(), supplier.getName(), supplier.getContactEmail(),
+                                supplier.getStatus(), supplier.getPerformanceScore());
+        }
 
-    public RequisitionResponse toRequisitionResponse(Requisition requisition) {
-        List<RequisitionItemResponse> items = requisition.getItems()
-                .stream()
-                .map(item -> new RequisitionItemResponse(
-                        item.getId(),
-                        item.getDescription(),
-                        item.getQuantity(),
-                        item.getEstimatedUnitPrice(),
-                        item.getQuantity().multiply(item.getEstimatedUnitPrice())))
-                .toList();
+        public RequisitionResponse toRequisitionResponse(Requisition requisition) {
+                List<RequisitionItemResponse> items = requisition.getItems()
+                                .stream()
+                                .map(item -> new RequisitionItemResponse(
+                                                item.getId(),
+                                                item.getDescription(),
+                                                item.getQuantity(),
+                                                item.getEstimatedUnitPrice(),
+                                                item.getQuantity().multiply(item.getEstimatedUnitPrice())))
+                                .toList();
 
-        return new RequisitionResponse(
-                requisition.getId(),
-                requisition.getTitle(),
-                requisition.getBusinessJustification(),
-                requisition.getStatus(),
-                requisition.getTotalAmount(),
-                requisition.getRequester().getEmail(),
-                items);
-    }
+                return new RequisitionResponse(
+                                requisition.getId(),
+                                requisition.getTitle(),
+                                requisition.getBusinessJustification(),
+                                requisition.getStatus(),
+                                requisition.getTotalAmount(),
+                                requisition.getRequester().getEmail(),
+                                items);
+        }
 
-    public ApprovalResponse toApprovalResponse(Approval approval) {
-        Requisition requisition = approval.getRequisition();
-        return new ApprovalResponse(approval.getId(), requisition.getId(), requisition.getTitle(),
-                requisition.getRequester().getEmail(), requisition.getTotalAmount(), approval.getApprovalLevel(),
-                approval.getApprover().getEmail(), approval.getDecision(), approval.getComments());
-    }
+        public ApprovalResponse toApprovalResponse(Approval approval) {
+                Requisition requisition = approval.getRequisition();
+                return new ApprovalResponse(approval.getId(), requisition.getId(), requisition.getTitle(),
+                                requisition.getRequester().getEmail(), requisition.getTotalAmount(),
+                                approval.getApprovalLevel(),
+                                approval.getApprover().getEmail(), approval.getDecision(), approval.getComments());
+        }
 
-    public RfqResponse toRfqResponse(Rfq rfq) {
-        return new RfqResponse(rfq.getId(), rfq.getRfqNumber(), rfq.getRequisition().getId(),
-                rfq.getSubmissionDeadline(), rfq.getStatus());
-    }
+        public RfqResponse toRfqResponse(Rfq rfq) {
+                return new RfqResponse(rfq.getId(), rfq.getRfqNumber(), rfq.getRequisition().getId(),
+                                rfq.getSubmissionDeadline(), rfq.getStatus());
+        }
 
-    public QuotationResponse toQuotationResponse(Quotation quotation) {
-        return new QuotationResponse(quotation.getId(), quotation.getRfq().getId(), quotation.getSupplier().getId(),
-                quotation.getTotalAmount(), quotation.getDeliveryDays(), quotation.getEvaluationScore(),
-                quotation.isWinning());
-    }
+        public QuotationResponse toQuotationResponse(Quotation quotation) {
+                return new QuotationResponse(quotation.getId(), quotation.getRfq().getId(),
+                                quotation.getSupplier().getId(),
+                                quotation.getTotalAmount(), quotation.getDeliveryDays(), quotation.getEvaluationScore(),
+                                quotation.isWinning());
+        }
 
     public PurchaseOrderResponse toPurchaseOrderResponse(PurchaseOrder po) {
-        return new PurchaseOrderResponse(po.getId(), po.getPoNumber(), po.getSupplier().getId(),
-                                po.getTotalAmount(), po.getStatus().name(), po.getCreatedAt(), po.getUpdatedAt());
+        Long supplierId = po.getSupplier() != null ? po.getSupplier().getId() : null;
+        String supplierName = po.getSupplier() != null ? po.getSupplier().getName() : "-";
+
+        Long quotationId = po.getQuotation() != null ? po.getQuotation().getId() : null;
+
+        Long rfqId = po.getQuotation() != null && po.getQuotation().getRfq() != null
+                        ? po.getQuotation().getRfq().getId()
+                        : null;
+
+        Long requisitionId = po.getQuotation() != null
+                        && po.getQuotation().getRfq() != null
+                        && po.getQuotation().getRfq().getRequisition() != null
+                                        ? po.getQuotation().getRfq().getRequisition().getId()
+                                        : null;
+
+        return new PurchaseOrderResponse(
+                        po.getId(),
+                        po.getPoNumber(),
+                        supplierId,
+                        supplierName,
+                        quotationId,
+                        rfqId,
+                        requisitionId,
+                        po.getTotalAmount(),
+                        po.getStatus().name(),
+                        po.getCreatedAt(),
+                        po.getUpdatedAt());
     }
 }

@@ -98,8 +98,18 @@ public final class ProcurementDtos {
         public record AwardRequest(@NotNull Long quotationId, Long overrideQuotationId, String overrideJustification) {
         }
 
-        public record PurchaseOrderResponse(Long id, String poNumber, Long supplierId, BigDecimal totalAmount,
-                        String status, Instant createdAt, Instant updatedAt) {
+        public record PurchaseOrderResponse(
+                        Long id,
+                        String poNumber,
+                        Long supplierId,
+                        String supplierName,
+                        Long quotationId,
+                        Long rfqId,
+                        Long requisitionId,
+                        BigDecimal totalAmount,
+                        String status,
+                        Instant createdAt,
+                        Instant updatedAt) {
         }
 
         public record GrnRequest(@NotNull Long purchaseOrderId, @DecimalMin("0.00") BigDecimal receivedValue,
