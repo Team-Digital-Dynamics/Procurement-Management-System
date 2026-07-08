@@ -24,15 +24,110 @@
 
   let quotations = [];
   let filteredQuotations = [];
+  let quotationListNotice = null;
+  let nativeAlert = null;
+
+  const QUOTATION_LIST_PATHS = [
+    "/api/v1/quotations/my",
+    "/api/quotations/my",
+    "/api/v1/quotations",
+    "/api/quotations"
+  ];
+
+  const QUOTATION_SUBMIT_PATHS = [
+    "/api/v1/quotations",
+    "/api/quotations"
+  ];
+
+  function installInlineAlertBridge() {
+    if (typeof window === "undefined" || typeof window.alert !== "function") {
+      return;
+    }
+
+    if (!nativeAlert) {
+      nativeAlert = window.alert.bind(window);
+    }
+
+    window.alert = function (message) {
+      const text = String(message || "Unexpected error.");
+      const lowered = text.toLowerCase();
+
+      if (lowered.includes("access denied") || lowered.includes("forbidden")) {
+        showSubmissionMessage(
+          "error",
+          "Access denied for this action.",
+          "Your current role cannot submit this quotation. Confirm you are signed in as the invited supplier."
+        );
+        return;
+      }
+
+      showSubmissionMessage("error", "Action could not be completed.", text);
+    };
+  }
 
   async function fetchSupplierQuotations() {
     try {
-      const data = await PMS.getJson("/api/supplier-portal/quotations");
-      return Array.isArray(data) ? data : demoQuotations;
+      const data = await fetchQuotationListPayload(QUOTATION_LIST_PATHS);
+      quotationListNotice = null;
+      return Array.isArray(data) ? data : [];
     } catch (error) {
-      console.warn("Using demo supplier quotation data:", error.message);
-      return demoQuotations;
+      console.warn("Unable to load supplier quotation data:", error.message);
+
+      const friendlyError = mapQuotationErrorToUiMessage(error, "load");
+      if (friendlyError.code === "endpoint-missing") {
+        quotationListNotice = {
+          tone: "error",
+          title: friendlyError.title,
+          detail: `${friendlyError.detail} Demo records are shown below until the endpoint is available.`
+        };
+        return demoQuotations;
+      }
+
+      quotationListNotice = {
+        tone: "error",
+        title: friendlyError.title,
+        detail: friendlyError.detail
+      };
+      return [];
     }
+  }
+
+  async function fetchQuotationListPayload(paths) {
+    const token = PMS.getToken ? PMS.getToken() : "";
+
+    const headers = token
+      ? {
+          Accept: "application/json",
+          Authorization: `Bearer ${token}`
+        }
+      : {
+          Accept: "application/json"
+        };
+
+    let lastError = null;
+
+    for (const path of paths) {
+      const response = await fetch(path, {
+        method: "GET",
+        headers: headers
+      });
+
+      const responseBody = await parseResponseBody(response);
+
+      if (response.ok) {
+        return responseBody;
+      }
+
+      const error = buildHttpError(response, responseBody);
+      if (shouldTryAlternateRoute(path, response.status)) {
+        lastError = error;
+        continue;
+      }
+
+      throw error;
+    }
+
+    throw lastError || new Error("Unable to load quotations.");
   }
 
   function getRfqIdFromUrl() {
@@ -124,8 +219,14 @@
       notes: form.notes.value.trim()
     };
 
-    if (!payload.rfqId || payload.totalBidAmount <= 0 || payload.itemLineDetails.length === 0) {
-      alert("Please complete RFQ ID, Total Bid Amount and at least one valid line item.");
+    const validationErrors = validateQuotationPayload(payload);
+    if (validationErrors.length > 0) {
+      showSubmissionMessage(
+        "error",
+        "Quotation could not be submitted.",
+        "Fix the following issues and submit again.",
+        validationErrors
+      );
       return;
     }
 
@@ -138,22 +239,11 @@
     }
 
     try {
-      const response = await fetch("/api/v1/quotations", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json"
-        },
-        body: JSON.stringify(payload)
-      });
-
-      const responseBody = await parseResponseBody(response);
+      clearSubmissionMessage();
+      const { response, responseBody } = await submitQuotationPayload(payload);
 
       if (response.status !== 201) {
-        throw new Error(
-          (responseBody && (responseBody.message || responseBody.error || responseBody.details)) ||
-          "Unable to save quotation."
-        );
+        throw buildHttpError(response, responseBody);
       }
 
       const generatedId = getGeneratedQuotationId(responseBody);
@@ -177,13 +267,51 @@
 
       applyFilters();
     } catch (error) {
-      alert(error.message || "Unable to save quotation.");
+      const friendlyError = mapQuotationErrorToUiMessage(error, "submit");
+      showSubmissionMessage(
+        "error",
+        friendlyError.title,
+        friendlyError.detail,
+        friendlyError.errors || []
+      );
     } finally {
       if (submitButton) {
         submitButton.disabled = false;
         submitButton.textContent = originalButtonText;
       }
     }
+  }
+
+  async function submitQuotationPayload(payload) {
+    const token = PMS.getToken ? PMS.getToken() : "";
+    let lastError = null;
+
+    for (const path of QUOTATION_SUBMIT_PATHS) {
+      const headers = {
+        "Content-Type": "application/json",
+        Accept: "application/json"
+      };
+
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+
+      const response = await fetch(path, {
+        method: "POST",
+        headers: headers,
+        body: JSON.stringify(payload)
+      });
+
+      const responseBody = await parseResponseBody(response);
+
+      if (response.ok || !shouldTryAlternateRoute(path, response.status)) {
+        return { response, responseBody };
+      }
+
+      lastError = buildHttpError(response, responseBody);
+    }
+
+    throw lastError || new Error("Unable to submit quotation.");
   }
 
   function collectItemLineDetails(form) {
@@ -218,6 +346,292 @@
     } catch (error) {
       return {};
     }
+  }
+
+  function shouldTryAlternateRoute(path, status) {
+    if (!(status === 403 || status === 404 || status === 405)) {
+      return false;
+    }
+
+    return String(path || "").includes("/api/v1/");
+  }
+
+  function buildHttpError(response, responseBody) {
+    const message =
+      (responseBody && (responseBody.message || responseBody.error || responseBody.details)) ||
+      response.statusText ||
+      "Request failed";
+
+    const error = new Error(typeof message === "string" ? message : "Request failed");
+    error.status = response.status;
+    error.responseBody = responseBody;
+    return error;
+  }
+
+  function mapQuotationErrorToUiMessage(error, mode) {
+    const status = Number(error?.status || 0);
+    const message = String(error?.message || "");
+    const normalized = message.toLowerCase();
+    const parsedErrors = extractBackendErrorList(error);
+
+    if (normalized.includes("cannot deserialize") && normalized.includes("rfqid")) {
+      return {
+        code: "rfq-format-invalid",
+        title: "RFQ ID format is invalid.",
+        detail: "Use the numeric RFQ ID (example: 9303), not the RFQ reference string.",
+        errors: parsedErrors
+      };
+    }
+
+    if (status === 401 || normalized.includes("session has expired")) {
+      return {
+        code: "session-expired",
+        title: "Your session has expired.",
+        detail: "Sign in again and retry your quotation action.",
+        errors: parsedErrors
+      };
+    }
+
+    if (status === 403 || normalized.includes("access denied") || normalized.includes("not allowed")) {
+      return {
+        code: "access-denied",
+        title: "Access denied for this action.",
+        detail: "Your current role cannot perform this quotation action. Confirm you are signed in as the correct supplier account.",
+        errors: parsedErrors
+      };
+    }
+
+    if (status === 404 && normalized.includes("rfq")) {
+      return {
+        code: "rfq-not-found",
+        title: "RFQ does not exist.",
+        detail: "The RFQ you entered was not found. Check the RFQ ID and try again.",
+        errors: parsedErrors
+      };
+    }
+
+    if (status === 404) {
+      return {
+        code: "endpoint-missing",
+        title: mode === "submit" ? "Quotation submission endpoint is missing." : "Quotation list endpoint is missing.",
+        detail: "The backend API route was not found on this environment.",
+        errors: parsedErrors
+      };
+    }
+
+    if (status === 405 || normalized.includes("method") && normalized.includes("not supported")) {
+      return {
+        code: "endpoint-method-mismatch",
+        title: "Quotation endpoint does not accept this action.",
+        detail: "This route exists, but it does not support the current request method. The system will retry a compatible quotation route.",
+        errors: parsedErrors
+      };
+    }
+
+    if (status === 409 || normalized.includes("already submitted")) {
+      return {
+        code: "duplicate-quotation",
+        title: "Quotation already submitted.",
+        detail: "A quotation already exists for this RFQ and supplier. Open the existing one instead of creating a duplicate.",
+        errors: parsedErrors
+      };
+    }
+
+    if (normalized.includes("deadline has passed") || normalized.includes("rfq is closed") || normalized.includes("closed or deadline")) {
+      return {
+        code: "rfq-closed",
+        title: "RFQ deadline has passed.",
+        detail: "Submissions are closed for this RFQ. Choose an open RFQ with an active deadline.",
+        errors: parsedErrors
+      };
+    }
+
+    if (normalized.includes("rfq not found") || normalized.includes("non-existent") || normalized.includes("does not exist")) {
+      return {
+        code: "rfq-not-found",
+        title: "RFQ does not exist.",
+        detail: "The selected RFQ could not be found. Validate the RFQ number before submitting.",
+        errors: parsedErrors
+      };
+    }
+
+    if (normalized.includes("supplierid") || normalized.includes("supplier id") || normalized.includes("supplier not approved")) {
+      return {
+        code: "supplier-validation",
+        title: "Supplier details are invalid for submission.",
+        detail: "This account is not currently linked to an approved supplier profile for the selected RFQ.",
+        errors: parsedErrors
+      };
+    }
+
+    if (status === 400) {
+      return {
+        code: "bad-request",
+        title: "Quotation request is invalid.",
+        detail: message || "Please review the form fields and submit again.",
+        errors: parsedErrors
+      };
+    }
+
+    if (status >= 500 || normalized.includes("unexpected internal error")) {
+      return {
+        code: "server-error",
+        title: mode === "submit" ? "Unable to submit quotation." : "Unable to load quotations.",
+        detail: "The server returned an internal error. Check the likely causes below.",
+        errors: parsedErrors.length > 0
+          ? parsedErrors
+          : [
+              "RFQ ID may not exist in the system.",
+              "Your supplier profile may not be linked or approved for this RFQ.",
+              "The quotation endpoint may not support this request shape yet."
+            ]
+      };
+    }
+
+    return {
+      code: "unknown",
+      title: mode === "submit" ? "Unable to submit quotation." : "Unable to load quotations.",
+      detail: message || "An unexpected error occurred. Please try again.",
+      errors: parsedErrors
+    };
+  }
+
+  function validateQuotationPayload(payload) {
+    const errors = [];
+
+    if (!payload.rfqId) {
+      errors.push("RFQ ID is required.");
+    } else if (!/^\d+$/.test(String(payload.rfqId))) {
+      errors.push("RFQ ID must be numeric (example: 9303). Do not use RFQ reference text.");
+    }
+
+    if (!(Number(payload.totalBidAmount) > 0)) {
+      errors.push("Total bid amount must be greater than zero.");
+    }
+
+    if (!Array.isArray(payload.itemLineDetails) || payload.itemLineDetails.length === 0) {
+      errors.push("Add at least one valid line item with description, quantity, and unit price.");
+    }
+
+    return errors;
+  }
+
+  function splitMessageIntoErrors(message) {
+    return String(message || "")
+      .split(/[;\n]+/)
+      .map(function (item) {
+        return item.trim();
+      })
+      .filter(Boolean);
+  }
+
+  function simplifyErrorMessage(message) {
+    const text = String(message || "").trim();
+    if (!text) {
+      return "Submission could not be completed.";
+    }
+
+    const normalized = text.toLowerCase();
+
+    if (normalized.includes("deadline") || normalized.includes("rfq is closed") || normalized.includes("closed or deadline")) {
+      return "Late submission is not allowed for this RFQ.";
+    }
+
+    if (normalized.includes("deliverydays") && normalized.includes("greater than or equal to 1")) {
+      return "Late submission is not allowed for this RFQ.";
+    }
+
+    if (normalized.includes("supplierid") && normalized.includes("must not be null")) {
+      return "Your supplier account is not linked for quotation submission.";
+    }
+
+    if (normalized.includes("request method") && normalized.includes("not supported")) {
+      return "This quotation endpoint cannot process the submission method.";
+    }
+
+    if (normalized.includes("rfq not found") || normalized.includes("does not exist") || normalized.includes("non-existent")) {
+      return "The selected RFQ could not be found.";
+    }
+
+    if (normalized.includes("access denied") || normalized.includes("forbidden") || normalized.includes("not allowed")) {
+      return "You are not allowed to submit this quotation with the current role.";
+    }
+
+    return text;
+  }
+
+  function extractBackendErrorList(error) {
+    const body = error?.responseBody;
+    const list = [];
+    const seen = new Set();
+
+    function pushUnique(value) {
+      const text = String(value || "").trim();
+      if (!text) {
+        return;
+      }
+
+      const simplified = simplifyErrorMessage(text);
+
+      const key = simplified.toLowerCase();
+      if (seen.has(key)) {
+        return;
+      }
+
+      seen.add(key);
+      list.push(simplified);
+    }
+
+    if (Array.isArray(body?.errors)) {
+      body.errors.forEach(pushUnique);
+    }
+
+    if (Array.isArray(body?.data?.errors)) {
+      body.data.errors.forEach(pushUnique);
+    }
+
+    if (typeof body?.message === "string") {
+      splitMessageIntoErrors(body.message).forEach(pushUnique);
+    }
+
+    if (typeof error?.message === "string") {
+      splitMessageIntoErrors(error.message).forEach(pushUnique);
+    }
+
+    return list.slice(0, 3);
+  }
+
+  function clearSubmissionMessage() {
+    const host = document.getElementById("quotationSubmissionResult");
+    if (host) {
+      host.innerHTML = "";
+    }
+  }
+
+  function showSubmissionMessage(tone, title, detail, details) {
+    const host = document.getElementById("quotationSubmissionResult");
+    if (!host) {
+      return;
+    }
+
+    const detailItems = Array.isArray(details) ? details.filter(Boolean) : [];
+    const detailListHtml = detailItems.length > 0
+      ? `
+        <ul>
+          ${detailItems.map(function (item) {
+            return `<li>${PMS.escapeHtml(item)}</li>`;
+          }).join("")}
+        </ul>
+      `
+      : "";
+
+    host.innerHTML = `
+      <div class="message ${PMS.escapeHtml(tone)}" role="alert" aria-live="assertive">
+        <strong>${PMS.escapeHtml(title)}</strong>
+        <p>${PMS.escapeHtml(detail)}</p>
+        ${detailListHtml}
+      </div>
+    `;
   }
 
   function getGeneratedQuotationId(responseBody) {
@@ -288,6 +702,13 @@
             <a class="btn btn-secondary" href="/supplier-dashboard.html">Back to Supplier Dashboard</a>
           </div>
         </div>
+
+        ${quotationListNotice ? `
+          <div class="message ${quotationListNotice.tone}" role="alert" aria-live="assertive">
+            <strong>${PMS.escapeHtml(quotationListNotice.title)}</strong>
+            <p>${PMS.escapeHtml(quotationListNotice.detail)}</p>
+          </div>
+        ` : ""}
 
         ${selectedRfqId ? `
           <div class="message info">
@@ -392,6 +813,8 @@
   }
 
   async function start() {
+    installInlineAlertBridge();
+
     PMS.renderLayout(
       "supplier-dashboard",
       "My Quotations",

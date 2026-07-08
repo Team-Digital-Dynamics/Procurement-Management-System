@@ -151,6 +151,7 @@ function renderReportsHubPage() {
           <div>
             <h2>Report Directory</h2>
             <p>Search and open reports from one central directory.</p>
+            <p class="muted">Search works across report name, description, category, status and allowed roles. Example terms: summary, compliance, available, system administrator, approver level 2, supplier.</p>
           </div>
         </div>
 
@@ -193,7 +194,7 @@ function renderReportsDirectoryTable(allowedReports) {
     title: "Reports Directory",
     rows: allowedReports,
     pageSize: 10,
-    searchPlaceholder: "Filter reports...",
+    searchPlaceholder: "Search by report, category, status, or role...",
     emptyTitle: "No reports available",
     emptyText: "No reports are available for your current role.",
     columns: [
@@ -207,7 +208,7 @@ function renderReportsDirectoryTable(allowedReports) {
           `;
         },
         searchValue: function (item) {
-          return `${item.title} ${item.description}`;
+          return buildReportDirectorySearchText(item);
         }
       },
       {
@@ -228,7 +229,7 @@ function renderReportsDirectoryTable(allowedReports) {
           return PMS.escapeHtml(PMS.formatRoles(item.roles));
         },
         searchValue: function (item) {
-          return item.roles.join(" ");
+          return `${item.roles.join(" ")} ${PMS.formatRoles(item.roles)}`;
         }
       },
       {
@@ -247,6 +248,27 @@ function renderReportsDirectoryTable(allowedReports) {
       }
     ]
   });
+}
+
+function buildReportDirectorySearchText(item) {
+  const safeItem = item || {};
+  const status = String(safeItem.status || "");
+  const formattedStatus = String(PMS.formatStatus ? PMS.formatStatus(status) : status);
+  const rawRoles = Array.isArray(safeItem.roles) ? safeItem.roles.join(" ") : "";
+  const formattedRoles = Array.isArray(safeItem.roles) && PMS.formatRoles
+    ? PMS.formatRoles(safeItem.roles)
+    : rawRoles;
+
+  return [
+    safeItem.title,
+    safeItem.description,
+    safeItem.category,
+    status,
+    formattedStatus,
+    rawRoles,
+    formattedRoles,
+    safeItem.href
+  ].join(" ");
 }
 
 function attachReportsHubEvents() {

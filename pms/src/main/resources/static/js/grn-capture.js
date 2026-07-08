@@ -19,13 +19,32 @@
 
   async function fetchPurchaseOrder() {
     const poId = getPurchaseOrderId();
+    const normalizedPoId = Number(poId);
 
     try {
       const data = await PMS.getJson("/api/purchase-orders/" + encodeURIComponent(poId));
       return data || demoPurchaseOrder;
     } catch (error) {
+      try {
+        const list = await PMS.getJson("/api/purchase-orders");
+        const match = Array.isArray(list)
+          ? list.find(function (entry) {
+              return Number(entry?.id) === normalizedPoId;
+            })
+          : null;
+
+        if (match) {
+          return match;
+        }
+      } catch (listError) {
+        console.warn("Unable to resolve purchase order from list endpoint:", listError.message);
+      }
+
       console.warn("Using demo PO data for GRN:", error.message);
-      return demoPurchaseOrder;
+      return {
+        ...demoPurchaseOrder,
+        id: Number.isFinite(normalizedPoId) && normalizedPoId > 0 ? normalizedPoId : demoPurchaseOrder.id
+      };
     }
   }
 
@@ -91,6 +110,16 @@
   }
 
   async function submitGrn(event, po) {
+        const purchaseOrderId = Number(po.id || getPurchaseOrderId());
+
+        if (!Number.isFinite(purchaseOrderId) || purchaseOrderId <= 0) {
+          const statusHost = document.getElementById("grnSaveStatus");
+          if (statusHost) {
+            statusHost.innerHTML = PMS.message("error", "Invalid purchase order selected for GRN capture.");
+          }
+          return;
+        }
+
     event.preventDefault();
 
     const form = event.target;
@@ -140,7 +169,7 @@
     }
 
     const payload = {
-      purchaseOrderId: Number(po.id || getPurchaseOrderId()),
+      purchaseOrderId: purchaseOrderId,
       receivedBy: receivedBy,
       receivedValue: receivedValue,
       notes: notes
@@ -155,18 +184,7 @@
     }
 
     try {
-      const response = await fetch("/api/v1/grns", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json"
-        },
-        body: JSON.stringify(payload)
-      });
-
-      if (response.status !== 201) {
-        throw new Error("Unable to save GRN.");
-      }
+      const response = await postGrnWithFallback(payload);
 
       const responseBody = await readGrnResponseBody(response);
       const grnReference = extractGrnReceiptReference(responseBody);
@@ -202,6 +220,66 @@
         submitButton.disabled = false;
         submitButton.textContent = originalButtonText;
       }
+    }
+  }
+
+  async function postGrnWithFallback(payload) {
+    const endpoints = ["/api/v1/grns", "/api/grns"];
+    let lastError = null;
+    const token = typeof PMS !== "undefined" && PMS.getToken ? PMS.getToken() : null;
+
+    const headers = {
+      "Content-Type": "application/json",
+      Accept: "application/json"
+    };
+
+    if (token) {
+      headers.Authorization = "Bearer " + token;
+    }
+
+    for (const endpoint of endpoints) {
+      try {
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(payload)
+        });
+
+        if (response.ok) {
+          return response;
+        }
+
+        if (response.status === 404 || response.status === 405) {
+          continue;
+        }
+
+        const backendMessage = await readBackendErrorMessage(response);
+        throw new Error(backendMessage || "Unable to save GRN.");
+      } catch (networkError) {
+        lastError = networkError;
+      }
+    }
+
+    if (lastError instanceof Error) {
+      throw lastError;
+    }
+
+    throw new Error("Unable to save GRN.");
+  }
+
+  async function readBackendErrorMessage(response) {
+    try {
+      const contentType = response.headers.get("content-type") || "";
+
+      if (contentType.includes("application/json")) {
+        const payload = await response.json();
+        return payload.message || payload.error || payload.detail || null;
+      }
+
+      const text = await response.text();
+      return text || null;
+    } catch (error) {
+      return null;
     }
   }
 

@@ -50,6 +50,7 @@ async function loadPurchaseOrders(messageHtml) {
       });
     }
 
+    wireCaptureGrnHandlers();
     wireGeneratePoHandlers(purchaseOrders);
   } catch (error) {
     PMS.setContent(`
@@ -106,7 +107,7 @@ function purchaseOrdersTable(purchaseOrders) {
                     <button
                       class="btn btn-sm btn-primary"
                       type="button"
-                      onclick="goToGrnPlaceholder('${PMS.escapeHtml(po.id)}')"
+                      data-capture-grn="${PMS.escapeHtml(po.id)}"
                     >
                       Capture GRN
                     </button>
@@ -164,6 +165,25 @@ function getPoAmount(po) {
 
 function goToGrnPlaceholder(poId) {
   window.location.href = "/grn-capture.html?poId=" + encodeURIComponent(poId);
+}
+
+function wireCaptureGrnHandlers() {
+  const buttons = document.querySelectorAll("[data-capture-grn]");
+
+  buttons.forEach(function (button) {
+    button.addEventListener("click", function () {
+      const poId = button.getAttribute("data-capture-grn");
+
+      if (!poId) {
+        if (typeof PMS !== "undefined" && PMS.showToast) {
+          PMS.showToast("error", "Unable to open GRN capture for this purchase order.");
+        }
+        return;
+      }
+
+      goToGrnPlaceholder(poId);
+    });
+  });
 }
 
 function hasPurchaseOrderAlready(item) {

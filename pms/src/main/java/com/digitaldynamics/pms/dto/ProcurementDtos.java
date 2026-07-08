@@ -99,7 +99,7 @@ public final class ProcurementDtos {
         }
 
         public record PurchaseOrderResponse(Long id, String poNumber, Long supplierId, BigDecimal totalAmount,
-                        String status) {
+                        String status, Instant createdAt, Instant updatedAt) {
         }
 
         public record GrnRequest(@NotNull Long purchaseOrderId, @DecimalMin("0.00") BigDecimal receivedValue,

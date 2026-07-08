@@ -8,7 +8,7 @@ document.addEventListener("DOMContentLoaded", function () {
   loadRfqDetail();
 });
 
-let currentRecommendedSupplierId = null;
+let currentRecommendedQuotationId = null;
 let currentAwardRfqId = null;
 
 async function loadRfqDetail() {
@@ -48,7 +48,7 @@ async function loadRfqDetail() {
 
     const linkedRequisition = findLinkedRequisition(rfq, requisitions);
     const linkedPurchaseOrder = findLinkedPurchaseOrder(rfq, purchaseOrders);
-    const quotations = getRfqQuotations(rfq, rfqId);
+    const quotations = await loadRfqQuotations(rfq, rfqId);
     currentAwardRfqId = rfq.id;
 
     PMS.setContent(`
@@ -136,7 +136,7 @@ async function loadRfqDetail() {
 
     wireContractAwardForm();
 
-    await loadRfqEvaluationScores(rfq.id);
+    await loadRfqEvaluationScores(quotations);
 
     wireRfqSubmissionHandler(rfq);
   } catch (error) {
@@ -203,6 +203,22 @@ function getRfqQuotations(rfq, rfqId) {
   });
 }
 
+async function loadRfqQuotations(rfq, rfqId) {
+  const localQuotations = getRfqQuotations(rfq, rfqId);
+  if (Array.isArray(localQuotations) && localQuotations.length > 0) {
+    return localQuotations;
+  }
+
+  const all = await safeGet("/api/v1/quotations", null) || await safeGet("/api/quotations", []);
+  if (!Array.isArray(all)) {
+    return [];
+  }
+
+  return all.filter(function (item) {
+    return String(item.rfqId || item.rfq?.id || "") === String(rfqId);
+  });
+}
+
 function getStoredEvaluatedQuotations() {
   try {
     const raw = sessionStorage.getItem("pmsEvaluatedQuotations");
@@ -254,7 +270,7 @@ function rfqSummary(rfq, linkedRequisition) {
 
       <div>
         <span>Closing Date</span>
-        <strong>${formatPossibleDate(rfq.closingDate || rfq.deadline || rfq.validUntil)}</strong>
+        <strong>${formatPossibleDate(rfq.submissionDeadline || rfq.closingDate || rfq.deadline || rfq.validUntil)}</strong>
       </div>
     </div>
   `;
@@ -409,28 +425,16 @@ function evaluationScoresSection() {
   `;
 }
 
-async function loadRfqEvaluationScores(rfqId) {
+async function loadRfqEvaluationScores(quotations) {
   const tableBody = document.getElementById("evaluationScoresTableBody");
   const emptyHost = document.getElementById("evaluationScoresEmpty");
 
-  if (!rfqId || !tableBody || !emptyHost) {
+  if (!tableBody || !emptyHost) {
     return;
   }
 
   try {
-    const response = await fetch(`/api/v1/rfqs/${encodeURIComponent(rfqId)}/evaluation-scores`, {
-      method: "GET",
-      headers: {
-        Accept: "application/json"
-      }
-    });
-
-    if (!response.ok) {
-      throw new Error("Unable to load evaluation scores.");
-    }
-
-    const payload = await response.json();
-    const rows = normalizeEvaluationScoreRows(payload);
+    const rows = normalizeEvaluationScoreRows(quotations);
     const recommended = findRecommendedEvaluationRow(rows);
 
     if (!rows.length) {
@@ -473,7 +477,23 @@ async function loadRfqEvaluationScores(rfqId) {
 
 function normalizeEvaluationScoreRows(payload) {
   if (Array.isArray(payload)) {
-    return payload;
+    return payload.map(function (row) {
+      const weighted = row.weightedScore ?? row.evaluationScore ?? row.totalScore ?? row.score ?? 0;
+      const quoteRef = row.quoteNumber || row.quotationNumber || row.quoteId || row.quotationId || row.id || "-";
+
+      return {
+        id: row.id || row.quoteId || row.quotationId || row.quoteNumber || row.quotationNumber,
+        quoteId: row.quoteId || row.quotationId || row.id,
+        quoteNumber: quoteRef,
+        quotationNumber: quoteRef,
+        supplierId: row.supplierId || row.supplier?.id || null,
+        supplierName: row.supplierName || row.supplier?.name || row.supplier || "Supplier",
+        technicalScore: row.technicalScore ?? row.qualityScore ?? 0,
+        financialScore: row.financialScore ?? row.termsScore ?? 0,
+        weightedScore: Number(weighted),
+        evaluationScore: Number(weighted)
+      };
+    });
   }
 
   if (Array.isArray(payload?.matrix)) {
@@ -535,7 +555,7 @@ function populatePrimaryAwardSelection(recommendedRow) {
   }
 
   if (!recommendedRow) {
-    currentRecommendedSupplierId = null;
+    currentRecommendedQuotationId = null;
     supplierField.value = "";
     quoteField.value = "";
     scoreField.value = "";
@@ -543,10 +563,10 @@ function populatePrimaryAwardSelection(recommendedRow) {
     return;
   }
 
-  currentRecommendedSupplierId = String(
-    recommendedRow.supplierId ||
-    recommendedRow.supplier?.id ||
-    recommendedRow.supplier?.supplierId ||
+  currentRecommendedQuotationId = String(
+    recommendedRow.quoteId ||
+    recommendedRow.quotationId ||
+    recommendedRow.id ||
     ""
   ) || null;
 
@@ -727,10 +747,10 @@ function renderAwardSupplierOptions(rows, recommendedRow) {
   }
 
   const options = rows.map(function (row, index) {
-    const supplierId = String(
-      row.supplierId ||
-      row.supplier?.id ||
-      row.supplier?.supplierId ||
+    const quoteId = String(
+      row.quoteId ||
+      row.quotationId ||
+      row.id ||
       ""
     );
 
@@ -738,15 +758,15 @@ function renderAwardSupplierOptions(rows, recommendedRow) {
     const scoreText = formatScoreForScreen(row.weightedScore, 4);
     const isRecommended =
       recommendedRow &&
-      String(supplierId) === String(
-        recommendedRow.supplierId ||
-        recommendedRow.supplier?.id ||
-        recommendedRow.supplier?.supplierId ||
+      String(quoteId) === String(
+        recommendedRow.quoteId ||
+        recommendedRow.quotationId ||
+        recommendedRow.id ||
         ""
       );
 
     return `
-      <option value="${PMS.escapeHtml(supplierId)}" ${isRecommended ? "selected" : ""}>
+      <option value="${PMS.escapeHtml(quoteId)}" ${isRecommended ? "selected" : ""}>
         ${PMS.escapeHtml(supplierName)} | Score ${PMS.escapeHtml(scoreText)} ${isRecommended ? "(Recommended)" : ""}
       </option>
     `;
@@ -761,16 +781,16 @@ async function handleContractAwardSubmit(event) {
   clearContractAwardError();
 
   const form = event.currentTarget;
-  const selectedSupplierId = String(form.querySelector("[name='supplierId']")?.value || "").trim();
-  const topSupplierId = String(currentRecommendedSupplierId || "").trim();
+  const selectedQuotationId = String(form.querySelector("[name='supplierId']")?.value || "").trim();
+  const topQuotationId = String(currentRecommendedQuotationId || "").trim();
   const overrideReason = String(form.querySelector("[name='overrideReason']")?.value || "").trim();
 
-  if (!selectedSupplierId) {
+  if (!selectedQuotationId) {
     showContractAwardError("Please select a supplier before submitting the award.");
     return;
   }
 
-  if (topSupplierId && selectedSupplierId !== topSupplierId && !overrideReason) {
+  if (topQuotationId && selectedQuotationId !== topQuotationId && !overrideReason) {
     showContractAwardError("An explicit justification reason is required to override the highest-scoring supplier recommendation.");
     return;
   }
@@ -791,10 +811,13 @@ async function handleContractAwardSubmit(event) {
         Accept: "application/json"
       },
       body: JSON.stringify({
-        rfqId: Number(currentAwardRfqId),
-        supplierId: Number(selectedSupplierId),
-        recommendedSupplierId: topSupplierId ? Number(topSupplierId) : null,
-        overrideJustification: selectedSupplierId !== topSupplierId ? overrideReason : null
+        quotationId: Number(topQuotationId || selectedQuotationId),
+        overrideQuotationId: selectedQuotationId !== (topQuotationId || selectedQuotationId)
+          ? Number(selectedQuotationId)
+          : null,
+        overrideJustification: selectedQuotationId !== (topQuotationId || selectedQuotationId)
+          ? overrideReason
+          : null
       })
     });
 
@@ -803,10 +826,15 @@ async function handleContractAwardSubmit(event) {
       throw new Error(errorInfo.message || "Unable to submit contract award.");
     }
 
-    await triggerPurchaseOrderGenerationAfterAward(
-      Number(currentAwardRfqId),
-      Number(selectedSupplierId)
-    );
+    const awardBody = await readSuccessfulResponseBody(response);
+    const poReference = extractPurchaseOrderReference(awardBody);
+    const statusHost = document.getElementById("primaryAwardSelectionStatus");
+
+    if (statusHost) {
+      statusHost.textContent = poReference
+        ? `Contract award submitted. Purchase order generated: ${poReference}.`
+        : "Contract award submitted and purchase order generated.";
+    }
 
     if (typeof PMS !== "undefined" && PMS.showToast) {
       PMS.showToast("success", "Contract award submitted successfully.");
@@ -819,37 +847,6 @@ async function handleContractAwardSubmit(event) {
       submitButton.textContent = originalText;
     }
   }
-}
-
-async function triggerPurchaseOrderGenerationAfterAward(currentRfqId, selectedSupplierId) {
-  const poResponse = await fetch("/api/v1/purchase-orders/generate", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json"
-    },
-    body: JSON.stringify({
-      rfqId: currentRfqId,
-      supplierId: selectedSupplierId
-    })
-  });
-
-  if (poResponse.status !== 201) {
-    const errorInfo = await readErrorResponseBody(poResponse);
-    throw new Error(errorInfo.message || "Award saved but purchase order generation failed.");
-  }
-
-  const poBody = await readSuccessfulResponseBody(poResponse);
-  const poReference = extractPurchaseOrderReference(poBody);
-  const statusHost = document.getElementById("primaryAwardSelectionStatus");
-
-  if (statusHost) {
-    statusHost.textContent = poReference
-      ? `Purchase order provisioned successfully. Reference: ${poReference}.`
-      : "Purchase order provisioned successfully.";
-  }
-
-  return poReference;
 }
 
 async function readSuccessfulResponseBody(response) {

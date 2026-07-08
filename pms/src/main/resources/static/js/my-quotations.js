@@ -3,7 +3,7 @@ let quotationUsesDemoData = false;
 let quotationSecurityContext = {
   roles: [],
   isSupplier: false,
-  fetchPath: "/api/v1/quotations"
+  fetchPaths: ["/api/v1/quotations"]
 };
 
 document.addEventListener("DOMContentLoaded", async function () {
@@ -46,7 +46,7 @@ async function loadMyQuotationsPage() {
 }
 
 async function loadQuotationRecords() {
-  const response = await fetchQuotationPayload(quotationSecurityContext.fetchPath);
+  const response = await fetchQuotationPayload(quotationSecurityContext.fetchPaths);
   const list = extractList(response);
 
   return list.map(normaliseQuotationRecord);
@@ -58,7 +58,17 @@ async function initializeQuotationSecurityContext() {
   quotationSecurityContext = {
     roles: context.roles,
     isSupplier: context.isSupplier,
-    fetchPath: context.isSupplier ? "/api/v1/quotations/my-submissions" : "/api/v1/quotations"
+    fetchPaths: context.isSupplier
+      ? [
+          "/api/v1/quotations/my",
+          "/api/quotations/my",
+          "/api/v1/quotations",
+          "/api/quotations"
+        ]
+      : [
+          "/api/v1/quotations",
+          "/api/quotations"
+        ]
   };
 }
 
@@ -143,20 +153,36 @@ async function fetchSessionPayload() {
   throw lastError || new Error("Unable to resolve session context.");
 }
 
-async function fetchQuotationPayload(path) {
+async function fetchQuotationPayload(paths) {
   const token = PMS.getToken ? PMS.getToken() : "";
 
-  return fetchJsonWithForbiddenBoundary(path, {
-    method: "GET",
-    headers: token
-      ? {
-          Accept: "application/json",
-          Authorization: `Bearer ${token}`
-        }
-      : {
-          Accept: "application/json"
-        }
-  });
+  const headers = token
+    ? {
+        Accept: "application/json",
+        Authorization: `Bearer ${token}`
+      }
+    : {
+        Accept: "application/json"
+      };
+
+  let lastError = null;
+
+  for (const path of (Array.isArray(paths) ? paths : [paths])) {
+    try {
+      return await fetchJsonWithForbiddenBoundary(path, {
+        method: "GET",
+        headers: headers
+      });
+    } catch (error) {
+      if (error?.isForbidden || error?.status === 403) {
+        throw error;
+      }
+
+      lastError = error;
+    }
+  }
+
+  throw lastError || new Error("Unable to load quotation records.");
 }
 
 async function fetchJsonWithForbiddenBoundary(path, options) {

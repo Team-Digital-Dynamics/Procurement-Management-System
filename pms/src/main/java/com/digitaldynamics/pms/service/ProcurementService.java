@@ -14,6 +14,7 @@ import com.digitaldynamics.pms.dto.ProcurementDtos.RfqResponse;
 import com.digitaldynamics.pms.dto.ProcurementDtos.SupplierRequest;
 import com.digitaldynamics.pms.dto.ProcurementDtos.SupplierResponse;
 import com.digitaldynamics.pms.exception.ApiException;
+import com.digitaldynamics.pms.model.AccountStatus;
 import com.digitaldynamics.pms.model.Approval;
 import com.digitaldynamics.pms.model.ApprovalDecision;
 import com.digitaldynamics.pms.model.GoodsReceivedNote;
@@ -270,6 +271,17 @@ public class ProcurementService {
                         ? RequisitionStatus.APPROVED
                         : RequisitionStatus.REJECTED);
 
+        User requester = requisition.getRequester();
+        if (requester != null) {
+            notificationService.dispatchAlert(
+                requester.getId(),
+                requester.getEmail(),
+                "APPROVAL_NOTIFICATION",
+                "Requisition " + requisition.getId() + " has been "
+                    + request.decision().name().toLowerCase() + "."
+            );
+        }
+
         auditService.logEvent(
                 actor,
                 "DECIDE_APPROVAL",
@@ -338,14 +350,14 @@ public class ProcurementService {
                 notificationService.dispatchAlert(
                         supplierUser.get().getId(),
                         supplier.getContactEmail(),
-                        "Request For Quotation (RFQ)",
+                        "RFQ_NOTIFICATION",
                         "You have been invited to submit a quotation for " + rfq.getRfqNumber(),
                         true);
             } else {
                 notificationService.dispatchAlert(
                         null,
                         supplier.getContactEmail(),
-                        "Request For Quotation (RFQ)",
+                        "RFQ_NOTIFICATION",
                         "You have been invited to submit a quotation for " + rfq.getRfqNumber(),
                         false);
             }
@@ -485,6 +497,25 @@ public class ProcurementService {
 
         purchaseOrderRepository.save(po);
 
+        Optional<User> awardedSupplierUser = userRepository.findByEmail(po.getSupplier().getContactEmail().toLowerCase());
+        if (awardedSupplierUser.isPresent()) {
+            notificationService.dispatchAlert(
+                awardedSupplierUser.get().getId(),
+                po.getSupplier().getContactEmail(),
+                "PURCHASE_ORDER_NOTIFICATION",
+                "Purchase order " + po.getPoNumber() + " has been issued to your supplier profile.",
+                true
+            );
+        } else {
+            notificationService.dispatchAlert(
+                null,
+                po.getSupplier().getContactEmail(),
+                "PURCHASE_ORDER_NOTIFICATION",
+                "Purchase order " + po.getPoNumber() + " has been issued to your supplier profile.",
+                false
+            );
+        }
+
         auditService.logEvent(
                 actor,
                 "AWARD_RFQ",
@@ -522,6 +553,36 @@ public class ProcurementService {
                         : RequisitionStatus.RECEIVED);
 
         grnRepository.save(grn);
+
+        if (discrepancy) {
+            List<User> procurementOfficers = userRepository.findByRolesContaining(UserRole.PROCUREMENT_OFFICER)
+                .stream()
+                .filter(user -> user.getStatus() == AccountStatus.ACTIVE)
+                .toList();
+
+            for (User officer : procurementOfficers) {
+            notificationService.dispatchAlert(
+                officer.getId(),
+                officer.getEmail(),
+                "GRN_NOTIFICATION",
+                "GRN discrepancy detected for purchase order " + po.getPoNumber()
+                    + ". Received value " + request.receivedValue()
+                    + " differs from expected value " + po.getTotalAmount() + "."
+            );
+            }
+        } else {
+            Optional<User> awardedSupplierUser = userRepository
+                .findByEmail(po.getSupplier().getContactEmail().toLowerCase());
+
+            if (awardedSupplierUser.isPresent()) {
+            notificationService.dispatchAlert(
+                awardedSupplierUser.get().getId(),
+                po.getSupplier().getContactEmail(),
+                "GRN_NOTIFICATION",
+                "Goods received note captured for purchase order " + po.getPoNumber() + "."
+            );
+            }
+        }
 
         auditService.logEvent(
                 actor,

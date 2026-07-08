@@ -5,7 +5,6 @@ import com.digitaldynamics.pms.dto.ProcurementDtos.ApprovalResponse;
 import com.digitaldynamics.pms.dto.ProcurementDtos.AwardRequest;
 import com.digitaldynamics.pms.dto.ProcurementDtos.GrnRequest;
 import com.digitaldynamics.pms.dto.ProcurementDtos.PurchaseOrderResponse;
-import com.digitaldynamics.pms.dto.ProcurementDtos.QuotationRequest;
 import com.digitaldynamics.pms.dto.ProcurementDtos.QuotationResponse;
 import com.digitaldynamics.pms.dto.ProcurementDtos.RequisitionRequest;
 import com.digitaldynamics.pms.dto.ProcurementDtos.RequisitionResponse;
@@ -109,11 +108,6 @@ public class ProcurementController {
     @PreAuthorize("hasAnyRole('PROCUREMENT_OFFICER','ADMIN')")
     RfqResponse rfq(@Valid @RequestBody RfqRequest request, @AuthenticationPrincipal CurrentUser user) {
         return procurementService.createRfq(request, user.email());
-    }
-
-    @PostMapping("/quotations")
-    QuotationResponse quotation(@Valid @RequestBody QuotationRequest request) {
-        return procurementService.submitQuotation(request, "supplier-portal");
     }
 
     @PostMapping("/rfqs/{id}/evaluate")

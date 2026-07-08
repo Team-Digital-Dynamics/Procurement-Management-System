@@ -35,15 +35,28 @@ async function loadReports() {
     PMS.showLoading("Loading reports...");
 
     try {
-        // Fetches payload from the consolidated analytics endpoint
-        const data = await PMS.getJson("/api/reports/summary");
-        currentReportDetails = data.details || [];
+        const data = await loadReportsSummary();
+        const breakdownRows = await loadProcurementBreakdownData();
+
+        currentReportDetails = breakdownRows;
 
         // Map counts or fall back to zero arrays safely
-        const reqSubmitted = data.requisitions?.find(r => r.status === "PENDING")?.count || 0;
-        const reqApproved = data.requisitions?.find(r => r.status === "APPROVED")?.count || 0;
-        const activePOs = data.purchaseOrders?.reduce((sum, po) => sum + po.count, 0) || 0;
-        const activeSuppliersCount = data.topSuppliers?.length || 0;
+        const reqSubmitted =
+          data.requisitions?.find(r => r.status === "PENDING")?.count ||
+          data.submittedRequisitions ||
+          0;
+        const reqApproved =
+          data.requisitions?.find(r => r.status === "APPROVED")?.count ||
+          data.approvedRequisitions ||
+          0;
+        const activePOs =
+          data.purchaseOrders?.reduce((sum, po) => sum + po.count, 0) ||
+          breakdownRows.length ||
+          0;
+        const activeSuppliersCount =
+          data.topSuppliers?.length ||
+          data.approvedSuppliers ||
+          0;
 
         PMS.setContent(`
       <section class="grid-4">
@@ -97,8 +110,8 @@ async function loadReports() {
           </div>
 
           <div class="form-group">
-            <label for="departmentId">Department</label>
-            <input id="departmentId" name="departmentId" data-report-filter="departmentId" type="text" placeholder="Department ID">
+            <label for="departmentId">Supplier ID</label>
+            <input id="departmentId" name="departmentId" data-report-filter="departmentId" type="text" placeholder="Supplier ID">
           </div>
 
           <div class="form-actions" style="align-self: end;">
@@ -110,12 +123,105 @@ async function loadReports() {
       </section>
     `);
 
-        initializeProcurementBreakdownGrid();
+        initializeProcurementBreakdownGrid(null, breakdownRows);
         wireReportExportEvents();
         wireReportsFilterEvents();
     } catch (error) {
         PMS.setContent(`<section class="view-section">${PMS.message("error", error.message)}</section>`);
     }
+}
+
+async function loadReportsSummary() {
+  const endpoints = ["/api/reports/summary", "/api/reports"];
+  let lastError = null;
+
+  for (const endpoint of endpoints) {
+    try {
+      const payload = await PMS.getJson(endpoint);
+      return payload || {};
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError || new Error("Unable to load reports summary.");
+}
+
+async function loadProcurementBreakdownData(queryParams) {
+  const params = queryParams instanceof URLSearchParams ? queryParams : new URLSearchParams();
+  const queryText = params.toString();
+  const breakdownEndpoint = queryText
+    ? "/api/v1/reports/procurement-breakdown?" + queryText
+    : "/api/v1/reports/procurement-breakdown";
+
+  try {
+    const payload = await PMS.getJson(breakdownEndpoint);
+    const rows = extractBreakdownRows(payload);
+
+    if (rows.length > 0) {
+      return rows;
+    }
+  } catch (error) {
+    // Fall through to purchase-order fallback.
+  }
+
+  const purchaseOrders = await PMS.getJson("/api/purchase-orders");
+  const normalized = Array.isArray(purchaseOrders)
+    ? purchaseOrders.map(function (po) {
+        return {
+          departmentSpend: po.totalAmount,
+          orderDate: po.createdAt || po.updatedAt || null,
+          supplierName: po.supplierName || (po.supplierId ? "Supplier ID: " + po.supplierId : "-"),
+          poNumber: po.poNumber,
+          totalAmount: po.totalAmount,
+          status: po.status
+        };
+      })
+    : [];
+
+  return applyBreakdownFilters(normalized, params);
+}
+
+function applyBreakdownFilters(rows, params) {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return [];
+  }
+
+  const status = String(params.get("status") || "").trim().toUpperCase();
+  const startDate = String(params.get("startDate") || "").trim();
+  const endDate = String(params.get("endDate") || "").trim();
+  const departmentId = String(params.get("departmentId") || "").trim().toLowerCase();
+
+  return rows.filter(function (row) {
+    if (status) {
+      const rowStatus = String(row.status || row.poStatus || "").toUpperCase();
+      if (rowStatus !== status) {
+        return false;
+      }
+    }
+
+    if (startDate || endDate) {
+      const rowDateText = String(row.orderDate || row.dateIssued || row.createdAt || "").slice(0, 10);
+      if (!rowDateText) {
+        return false;
+      }
+      if (startDate && rowDateText < startDate) {
+        return false;
+      }
+      if (endDate && rowDateText > endDate) {
+        return false;
+      }
+    }
+
+    if (departmentId) {
+      const supplierText = String(row.supplierName || "").toLowerCase();
+      if (!supplierText.includes(departmentId)) {
+        return false;
+      }
+    }
+
+    return true;
+  });
 }
 
 function wireReportExportEvents() {
@@ -141,35 +247,31 @@ function wireReportExportEvents() {
 
 async function downloadProcurementExcelReport() {
   try {
-    const response = await fetch("/api/v1/reports/export/excel", {
-      method: "GET",
-      headers: {
-        Accept: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-      }
-    });
+    const queryParams = collectActiveReportFilters();
+    const backendBlob = await tryBackendReportExport(
+      ["/api/v1/reports/export/excel", "/api/reports/export/excel"],
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      queryParams
+    );
 
-    if (!response.ok) {
-      throw new Error("Unable to export Excel report.");
+    if (backendBlob) {
+      downloadBlob(
+        backendBlob,
+        `procurement-summary-${new Date().toISOString().slice(0, 10)}.xlsx`
+      );
+      hideExportMenu();
+      return;
     }
 
-    const excelBlobRaw = await response.blob();
-    const excelBlob = new Blob([excelBlobRaw], {
-      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    });
+    const excelBlob = createExcelFallbackBlob();
+    downloadBlob(
+      excelBlob,
+      `procurement-summary-${new Date().toISOString().slice(0, 10)}.xls`
+    );
+    hideExportMenu();
 
-    const objectUrl = URL.createObjectURL(excelBlob);
-    const downloadLink = document.createElement("a");
-
-    downloadLink.href = objectUrl;
-    downloadLink.download = "procurement-summary.xlsx";
-    document.body.appendChild(downloadLink);
-    downloadLink.click();
-    document.body.removeChild(downloadLink);
-    URL.revokeObjectURL(objectUrl);
-
-    const menu = document.getElementById("exportMenu");
-    if (menu) {
-      menu.style.display = "none";
+    if (typeof PMS !== "undefined" && PMS.showToast) {
+      PMS.showToast("success", "Excel report downloaded.");
     }
   } catch (error) {
     if (typeof PMS !== "undefined" && PMS.showToast) {
@@ -245,37 +347,26 @@ function buildReportsFilterQueryParams(form) {
 
 async function downloadProcurementPdfReport() {
   const queryParams = collectActiveReportFilters();
-  const queryText = queryParams.toString();
-  const requestUrl = queryText
-    ? "/api/v1/reports/export/pdf?" + queryText
-    : "/api/v1/reports/export/pdf";
 
   try {
-    const response = await fetch(requestUrl, {
-      method: "GET",
-      headers: {
-        Accept: "application/pdf"
-      }
-    });
+    const backendBlob = await tryBackendReportExport(
+      ["/api/v1/reports/export/pdf", "/api/reports/export/pdf"],
+      "application/pdf",
+      queryParams
+    );
 
-    if (!response.ok) {
-      throw new Error("Unable to export PDF report.");
+    if (backendBlob) {
+      downloadBlob(backendBlob, `procurement-report-${new Date().getFullYear()}.pdf`);
+      hideExportMenu();
+      return;
     }
 
-    const pdfBlob = await response.blob();
-    const objectUrl = URL.createObjectURL(pdfBlob);
-    const downloadLink = document.createElement("a");
+    const pdfBlob = createPdfFallbackBlob();
+    downloadBlob(pdfBlob, `procurement-report-${new Date().getFullYear()}.pdf`);
+    hideExportMenu();
 
-    downloadLink.href = objectUrl;
-    downloadLink.download = `procurement-report-${new Date().getFullYear()}.pdf`;
-    document.body.appendChild(downloadLink);
-    downloadLink.click();
-    document.body.removeChild(downloadLink);
-    URL.revokeObjectURL(objectUrl);
-
-    const menu = document.getElementById("exportMenu");
-    if (menu) {
-      menu.style.display = "none";
+    if (typeof PMS !== "undefined" && PMS.showToast) {
+      PMS.showToast("success", "PDF report downloaded.");
     }
   } catch (error) {
     if (typeof PMS !== "undefined" && PMS.showToast) {
@@ -310,20 +401,20 @@ function triggerDataExport(format) {
     }
 
     const filename = `procurement_summary_${new Date().toISOString().split('T')[0]}`;
+  const rows = getNormalizedReportExportRows();
 
     if (format === 'CSV' || format === 'EXCEL') {
-        // Extract headers based on structural keys
-        const headers = ["PO Number", "Supplier Name", "Total Amount", "Status", "Date Issued"];
-        const rows = currentReportDetails.map(item => [
-            item.poNumber,
-            item.supplierName,
-            item.totalAmount,
-            item.poStatus,
-            PMS.formatDateTime ? PMS.formatDateTime(item.dateIssued) : item.dateIssued
-        ]);
+    const headers = ["PO Number", "Supplier Name", "Total Amount", "Status", "Order Date"];
+    const tableRows = rows.map(item => [
+      item.poNumber,
+      item.supplierName,
+      item.totalAmount,
+      item.status,
+      item.orderDate
+    ]);
 
         let csvContent = "data:text/csv;charset=utf-8,"
-            + [headers.join(","), ...rows.map(e => e.map(val => `"${String(val).replace(/"/g, '""')}"`).join(","))].join("\n");
+      + [headers.join(","), ...tableRows.map(e => e.map(val => `"${String(val).replace(/"/g, '""')}"`).join(","))].join("\n");
 
         const encodedUri = encodeURI(csvContent);
         const link = document.createElement("a");
@@ -338,6 +429,178 @@ function triggerDataExport(format) {
     }
 
     document.getElementById("exportMenu").style.display = "none";
+}
+
+function getNormalizedReportExportRows() {
+  return (Array.isArray(currentReportDetails) ? currentReportDetails : []).map(function (item) {
+    return {
+      poNumber: String(item.poNumber || item.purchaseOrderNumber || "-"),
+      supplierName: String(item.supplierName || item.supplier?.name || "-"),
+      totalAmount: PMS.formatCurrency
+        ? PMS.formatCurrency(Number(item.totalAmount ?? item.poTotal ?? item.departmentSpend ?? 0) || 0)
+        : String(item.totalAmount ?? item.poTotal ?? item.departmentSpend ?? 0),
+      status: String(item.status || item.poStatus || "-"),
+      orderDate: formatReportDateValue(item.orderDate || item.dateIssued || item.createdAt || item.updatedAt || "-")
+    };
+  });
+}
+
+async function tryBackendReportExport(baseUrls, acceptMime, params) {
+  const queryParams = params instanceof URLSearchParams ? params : new URLSearchParams();
+  const queryText = queryParams.toString();
+  const token = typeof PMS !== "undefined" && PMS.getToken ? PMS.getToken() : null;
+  const headers = {
+    Accept: acceptMime
+  };
+
+  if (token) {
+    headers.Authorization = "Bearer " + token;
+  }
+
+  for (const baseUrl of baseUrls) {
+    const requestUrl = queryText ? `${baseUrl}?${queryText}` : baseUrl;
+
+    try {
+      const response = await fetch(requestUrl, {
+        method: "GET",
+        headers
+      });
+
+      if (response.ok) {
+        return await response.blob();
+      }
+    } catch (error) {
+      // Continue to fallback.
+    }
+  }
+
+  return null;
+}
+
+function createExcelFallbackBlob() {
+  const rows = getNormalizedReportExportRows();
+
+  if (!rows.length) {
+    throw new Error("There is no report data to export.");
+  }
+
+  const headers = ["PO Number", "Supplier Name", "Total Amount", "Status", "Order Date"];
+  const headerRow = `<tr>${headers.map((value) => `<th>${escapeExportHtml(value)}</th>`).join("")}</tr>`;
+  const bodyRows = rows
+    .map(function (row) {
+      const cells = [row.poNumber, row.supplierName, row.totalAmount, row.status, row.orderDate];
+      return `<tr>${cells.map((value) => `<td>${escapeExportHtml(value)}</td>`).join("")}</tr>`;
+    })
+    .join("");
+
+  const html = `
+    <html>
+      <head><meta charset="UTF-8"></head>
+      <body>
+        <table border="1">${headerRow}${bodyRows}</table>
+      </body>
+    </html>
+  `;
+
+  return new Blob([html], {
+    type: "application/vnd.ms-excel;charset=utf-8;"
+  });
+}
+
+function createPdfFallbackBlob() {
+  const rows = getNormalizedReportExportRows();
+
+  if (!rows.length) {
+    throw new Error("There is no report data to export.");
+  }
+
+  const lines = [
+    "Procurement Report",
+    "",
+    "PO Number | Supplier | Total Amount | Status | Order Date"
+  ];
+
+  rows.forEach(function (row) {
+    lines.push(`${row.poNumber} | ${row.supplierName} | ${row.totalAmount} | ${row.status} | ${row.orderDate}`);
+  });
+
+  return createSimplePdfBlob(lines);
+}
+
+function createSimplePdfBlob(lines) {
+  const safeLines = lines.slice(0, 42).map(function (line) {
+    return String(line || "").replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
+  });
+
+  const contentParts = ["BT", "/F1 10 Tf", "40 800 Td"];
+
+  safeLines.forEach(function (line, index) {
+    if (index > 0) {
+      contentParts.push("0 -16 Td");
+    }
+    contentParts.push(`(${line}) Tj`);
+  });
+
+  contentParts.push("ET");
+  const streamContent = contentParts.join("\n");
+
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    `<< /Length ${streamContent.length} >>\nstream\n${streamContent}\nendstream`
+  ];
+
+  let pdf = "%PDF-1.4\n";
+  const offsets = [0];
+
+  objects.forEach(function (obj, index) {
+    offsets.push(pdf.length);
+    pdf += `${index + 1} 0 obj\n${obj}\nendobj\n`;
+  });
+
+  const xrefOffset = pdf.length;
+  pdf += `xref\n0 ${objects.length + 1}\n`;
+  pdf += "0000000000 65535 f \n";
+
+  for (let i = 1; i <= objects.length; i += 1) {
+    pdf += `${String(offsets[i]).padStart(10, "0")} 00000 n \n`;
+  }
+
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\n`;
+  pdf += `startxref\n${xrefOffset}\n%%EOF`;
+
+  return new Blob([pdf], { type: "application/pdf" });
+}
+
+function escapeExportHtml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function downloadBlob(blob, filename) {
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+
+  link.href = objectUrl;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(objectUrl);
+}
+
+function hideExportMenu() {
+  const menu = document.getElementById("exportMenu");
+
+  if (menu) {
+    menu.style.display = "none";
+  }
 }
 
 function reportsSummaryTable() {
@@ -361,7 +624,7 @@ function reportsSummaryTable() {
   `;
 }
 
-async function initializeProcurementBreakdownGrid(queryParams) {
+async function initializeProcurementBreakdownGrid(queryParams, preloadedRows) {
   const tableBody = document.getElementById("reportsPrimaryTableBody");
   const emptyHost = document.getElementById("reportsPrimaryTableEmpty");
 
@@ -374,24 +637,9 @@ async function initializeProcurementBreakdownGrid(queryParams) {
 
   try {
     const params = queryParams instanceof URLSearchParams ? queryParams : new URLSearchParams();
-    const queryText = params.toString();
-    const requestUrl = queryText
-      ? "/api/v1/reports/procurement-breakdown?" + queryText
-      : "/api/v1/reports/procurement-breakdown";
-
-    const response = await fetch(requestUrl, {
-      method: "GET",
-      headers: {
-        Accept: "application/json"
-      }
-    });
-
-    if (!response.ok) {
-      throw new Error("Unable to load procurement breakdown data.");
-    }
-
-    const payload = await response.json();
-    const rows = extractBreakdownRows(payload);
+    const rows = Array.isArray(preloadedRows)
+      ? applyBreakdownFilters(preloadedRows, params)
+      : await loadProcurementBreakdownData(params);
 
     currentReportDetails = rows;
 
@@ -453,9 +701,11 @@ function createProcurementBreakdownRow(item) {
     item.poStatus ||
     "-";
 
+  const displayOrderDate = formatReportDateValue(orderDate);
+
   const cells = [
     PMS.formatCurrency ? PMS.formatCurrency(Number(departmentSpend) || 0) : String(departmentSpend ?? 0),
-    PMS.formatDateTime ? PMS.formatDateTime(orderDate) : String(orderDate),
+    displayOrderDate,
     String(supplierName),
     String(poNumber),
     PMS.formatCurrency ? PMS.formatCurrency(Number(totalAmount) || 0) : String(totalAmount ?? 0),
@@ -469,6 +719,26 @@ function createProcurementBreakdownRow(item) {
   });
 
   return tr;
+}
+
+function formatReportDateValue(value) {
+  const raw = String(value ?? "").trim();
+
+  if (!raw || raw === "-" || raw.toLowerCase() === "null" || raw.toLowerCase() === "undefined") {
+    return "-";
+  }
+
+  const parsed = new Date(raw);
+
+  if (Number.isNaN(parsed.getTime())) {
+    return "-";
+  }
+
+  if (typeof PMS !== "undefined" && typeof PMS.formatDateTime === "function") {
+    return PMS.formatDateTime(raw);
+  }
+
+  return raw;
 }
 
 async function loadAuditLogs() {

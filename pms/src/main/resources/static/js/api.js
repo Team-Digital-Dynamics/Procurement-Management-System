@@ -784,6 +784,50 @@
     }, 3500);
   }
 
+  function installGlobalAlertBridge() {
+    if (typeof window === "undefined" || typeof window.alert !== "function") {
+      return;
+    }
+
+    const originalAlert = window.alert.bind(window);
+
+    if (window.__pmsAlertBridgeInstalled) {
+      return;
+    }
+
+    window.__pmsAlertBridgeInstalled = true;
+
+    window.alert = function (message) {
+      const text = String(message || "Action could not be completed.");
+      const lowered = text.toLowerCase();
+
+      if (lowered.includes("access denied") || lowered.includes("forbidden")) {
+        showToast(
+          "error",
+          "Access denied. You do not have permission to perform this action with the current role."
+        );
+        return;
+      }
+
+      if (lowered.includes("deadline") && lowered.includes("passed")) {
+        showToast("error", "RFQ deadline has passed. Choose an open RFQ and try again.");
+        return;
+      }
+
+      if (lowered.includes("not found") || lowered.includes("non-existent")) {
+        showToast("error", "Requested record was not found. Verify the ID and try again.");
+        return;
+      }
+
+      // Keep a safety fallback for unexpected environments where toast rendering may fail.
+      try {
+        showToast("error", text);
+      } catch (error) {
+        originalAlert(text);
+      }
+    };
+  }
+
   function renderDataTable(config) {
     const tableConfig = config || {};
     const container = typeof tableConfig.container === "string"
@@ -1159,6 +1203,8 @@
     messages.innerHTML = scoutPopupMessages.map(scoutMessageTemplate).join("");
     messages.scrollTop = messages.scrollHeight;
   }
+
+  installGlobalAlertBridge();
 
   window.PMS = {
     ROLE_LABELS,

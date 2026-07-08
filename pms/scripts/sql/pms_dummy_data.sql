@@ -93,7 +93,7 @@ INSERT INTO evaluation_records (id, created_at, updated_at, rfq_id, quotation_id
 
 -- Purchase orders
 INSERT INTO purchase_orders (id, created_at, updated_at, po_number, quotation_id, supplier_id, total_amount, status) VALUES
-(9401, NOW(), NOW(), 'PO-TEST-9401', 9351, 9101, 33800.00, 'SENT'),
+(9401, NOW(), NOW(), 'PO-TEST-9401', 9351, 9101, 33800.00, 'ISSUED'),
 (9402, DATE_SUB(NOW(), INTERVAL 4 DAY), NOW(), 'PO-TEST-9402', 9353, 9101, 23800.00, 'RECEIVED');
 
 -- Goods received notes

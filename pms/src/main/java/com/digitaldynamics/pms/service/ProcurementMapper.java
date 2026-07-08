@@ -64,6 +64,6 @@ public class ProcurementMapper {
 
     public PurchaseOrderResponse toPurchaseOrderResponse(PurchaseOrder po) {
         return new PurchaseOrderResponse(po.getId(), po.getPoNumber(), po.getSupplier().getId(),
-                po.getTotalAmount(), po.getStatus().name());
+                                po.getTotalAmount(), po.getStatus().name(), po.getCreatedAt(), po.getUpdatedAt());
     }
 }
