@@ -1,4 +1,3 @@
-
 services:
   mysql:
     image: mysql:8.4
@@ -12,14 +11,14 @@ services:
     volumes:
       - pms_mysql:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-ppms"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-upms", "-ppms"]
       interval: 10s
       timeout: 5s
       retries: 10
 
   app:
     build:
-      context: ./pms
+      context: .
       dockerfile: Dockerfile
     depends_on:
       mysql:
@@ -29,12 +28,11 @@ services:
       SPRING_DATASOURCE_USERNAME: pms
       SPRING_DATASOURCE_PASSWORD: pms
       PMS_JWT_SECRET: ${PMS_JWT_SECRET:?PMS_JWT_SECRET is required}
-      PMS_MAIL_HOST: smtp.gmail.com
-      PMS_MAIL_PORT: 587
-      PMS_MAIL_PROTOCOL: smtp
-      PMS_MAIL_USERNAME: escgroupin4@gmail.com
-      PMS_MAIL_PASSWORD: zwfklulnkhjjjcwr
-
+      PMS_MAIL_HOST: ${PMS_MAIL_HOST:-mail.dalesmith.co.za}
+      PMS_MAIL_PORT: ${PMS_MAIL_PORT:-587}
+      PMS_MAIL_PROTOCOL: ${PMS_MAIL_PROTOCOL:-smtp}
+      PMS_MAIL_USERNAME: ${PMS_MAIL_USERNAME:-digitaldynamics@dalesmith.co.za}
+      PMS_MAIL_PASSWORD: ${PMS_MAIL_PASSWORD:-}
     ports:
       - "8080:8080"
 

@@ -36,7 +36,7 @@ public class NotificationService {
         try {
             notificationGateway.send(recipientEmail, type, message);
         } catch (Exception ex) {
-            LOG.warn("Email dispatch failed for recipientId={} recipientEmail={} type={}. Alert persisted in DB.",
+            LOG.error("Email dispatch failed for recipientId={} recipientEmail={} type={}. Alert persisted in DB.",
                     recipientId, recipientEmail, type, ex);
         }
     }
