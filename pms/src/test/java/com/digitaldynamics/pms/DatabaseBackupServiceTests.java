@@ -3,8 +3,6 @@ package com.digitaldynamics.pms;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.digitaldynamics.pms.service.DatabaseBackupService;
-import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -15,7 +13,7 @@ import org.springframework.test.context.DynamicPropertySource;
 
 @SpringBootTest(properties = "pms.backup.scheduled-enabled=false")
 class DatabaseBackupServiceTests {
-    private static final Path BACKUP_DIRECTORY = createBackupDirectory();
+    private static final Path BACKUP_DIRECTORY = Path.of("backups");
 
     @Autowired
     DatabaseBackupService backupService;
@@ -57,11 +55,4 @@ class DatabaseBackupServiceTests {
                 .contains(manualBackup.fileName(), scheduledBackup.fileName());
     }
 
-    private static Path createBackupDirectory() {
-        try {
-            return Files.createTempDirectory("pms-backup-test-");
-        } catch (IOException ex) {
-            throw new IllegalStateException("Unable to create backup test directory", ex);
-        }
-    }
 }
