@@ -56,11 +56,11 @@ function renderAssistantScreen() {
 
     document.getElementById("assistantForm").addEventListener("submit", handleAssistantSubmit);
 
-    document.querySelectorAll("[data-ai-question]").forEach(function (button) {
-        button.addEventListener("click", function () {
-            document.getElementById("assistantInput").value = button.dataset.aiQuestion;
-            document.getElementById("assistantForm").dispatchEvent(new Event("submit"));
-        });
+    document.querySelector(".ai-chat-shell").addEventListener("click", function (event) {
+        const button = event.target.closest("[data-ai-question]");
+        if (!button) return;
+
+        submitAssistantQuestion(button.dataset.aiQuestion);
     });
 
     scrollToLatestMessage();
@@ -76,6 +76,12 @@ function suggestionButton(text) {
 
 function messageTemplate(message) {
     const isUser = message.sender === "user";
+    const suggestions = !isUser && Array.isArray(message.suggestions) && message.suggestions.length
+        ? `
+        <div class="ai-followup-list">
+          ${message.suggestions.map(assistantFollowupButton).join("")}
+        </div>
+      `
   const isNotice = message.tone === "notice" && !isUser;
   const messageHtml = isUser
     ? `<p>${PMS.escapeHtml(message.text)}</p>`
@@ -91,6 +97,9 @@ function messageTemplate(message) {
         ${isUser ? "You" : "AI"}
       </div>
 
+      <div class="ai-message-bubble">
+        <p>${formatAssistantText(message.text)}</p>
+        ${suggestions}
       <div class="ai-message-bubble${isNotice ? " ai-message-notice" : ""}"${isNotice ? ' style="background:#f8f9fb;border:1px solid #d5dbe6;color:#2f3b52;"' : ""}>
     ${messageHtml}
     ${routeChip}
@@ -99,6 +108,16 @@ function messageTemplate(message) {
   `;
 }
 
+function assistantFollowupButton(text) {
+    return `
+    <button class="ai-followup-button" type="button" data-ai-question="${PMS.escapeHtml(text)}">
+      ${PMS.escapeHtml(text)}
+    </button>
+  `;
+}
+
+function formatAssistantText(text) {
+    return PMS.escapeHtml(text || "").replace(/\n/g, "<br>");
 function renderMarkdownMessageBox(text) {
   const escaped = PMS.escapeHtml(String(text || ""));
   const lines = escaped.split(/\r?\n/);
@@ -280,6 +299,11 @@ async function handleAssistantSubmit(event) {
     const input = document.getElementById("assistantInput");
     const question = (input.value || "").trim();
 
+    await submitAssistantQuestion(question);
+}
+
+async function submitAssistantQuestion(question) {
+    if (!question) return;
     if (!question) {
       assistantMessages.push({
         sender: "assistant",
@@ -289,13 +313,17 @@ async function handleAssistantSubmit(event) {
       return;
     }
 
+    const input = document.getElementById("assistantInput");
+
     // 1. Add user message
     assistantMessages.push({
         sender: "user",
         text: question
     });
 
-    input.value = "";
+    if (input) {
+        input.value = "";
+    }
     refreshMessages();
 
     // 2. Add temporary loading state
@@ -305,6 +333,25 @@ async function handleAssistantSubmit(event) {
     });
     refreshMessages();
 
+    try {
+        const response = await PMS.postJson("/api/assistant", {
+            message: question,
+            roles: getCurrentUserRoles()
+        });
+
+        assistantMessages.pop(); // Remove "Thinking..."
+
+        const finalAnswer = response?.answer || getAssistantResponse(question);
+
+        assistantMessages.push({
+            sender: "assistant",
+            text: finalAnswer,
+            suggestions: Array.isArray(response?.suggestions) ? response.suggestions : []
+        });
+
+        refreshMessages();
+    } catch (error) {
+        assistantMessages.pop(); // Remove "Thinking..."
     // 3. Submit to backend AI endpoint and append response as markdown-rendered assistant message
     try {
       const response = await fetch("/api/v1/ai/chat", {
@@ -368,6 +415,8 @@ async function handleAssistantSubmit(event) {
 
       if (isConnectivityFailure) {
         assistantMessages.push({
+            sender: "assistant",
+            text: getAssistantResponse(question)
           sender: "assistant",
           text: "The AI Copilot engine is temporarily unavailable. Core procurement operations remain active—please try your assistant request again shortly.",
           tone: "notice"
@@ -380,6 +429,13 @@ async function handleAssistantSubmit(event) {
         });
       }
 
+        refreshMessages();
+    }
+}
+
+function getCurrentUserRoles() {
+    const user = PMS.getUser ? PMS.getUser() : null;
+    return user && Array.isArray(user.roles) ? user.roles : [];
       refreshMessages();
     }
 }
