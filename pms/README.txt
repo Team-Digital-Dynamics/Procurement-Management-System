@@ -1,8 +1,6 @@
 # Digital Dynamics PMS Application Module
 
-This directory contains the Spring Boot application for the Digital Dynamics Procurement Management System.
-
-It includes the REST API, security configuration, business services, JPA entities, repositories, Flyway migrations, scheduled workers, mail integration, tests, Dockerfile, module-level Docker Compose file, and the static browser UI.
+This directory contains the Spring Boot application module for the Digital Dynamics Procurement Management System. It provides the REST API, security layer, procurement workflow services, persistence layer, database migrations, scheduled workers, mail integration, static frontend, Docker image definition, and tests.
 
 Maven artifact:
 
@@ -10,17 +8,19 @@ Maven artifact:
 com.digitaldynamics:digital-dynamics-pms:0.0.1-SNAPSHOT
 ```
 
-## Module Structure
+## Module Layout
 
 ```text
 pms/
 |-- Dockerfile
-|-- docker-compose.yml
+|-- HELP.md
+|-- pom.xml
 |-- mvnw
 |-- mvnw.cmd
-|-- pom.xml
 |-- README.txt
 |-- README-old.txt
+|-- README-old2.txt
+|-- scripts/
 |-- src/
     |-- main/
     |   |-- java/com/digitaldynamics/pms/
@@ -37,30 +37,41 @@ pms/
     |   |   |-- service/
     |   |   |-- util/
     |   |-- resources/
-    |       |-- application.yml
-    |       |-- application-dev.yml
-    |       |-- application-prod.yml
     |       |-- ai_chatbot/
     |       |-- db/migration/
     |       |-- static/
+    |       |-- templates/
+    |       |-- application.yml
+    |       |-- application-dev.yml
+    |       |-- application-prod.yml
     |-- test/
 ```
 
 ## Runtime Requirements
 
 - Java 17
-- Maven wrapper included in this directory
-- MySQL 8.x for normal local/dev runs
-- Docker and Docker Compose for containerized runs
+- Maven wrapper from this directory
+- MySQL 8.x or compatible database for normal runtime
+- Docker and Docker Compose for containerized development
 
-## Run With Docker Compose
+## Important Spring Components
 
-From this `pms` directory:
+- Controllers: authentication, users, requisitions, procurement workflow, quotations, approval thresholds, audits, backups, mail, assistant, and documentation
+- Services: business workflow orchestration and security-aware operations
+- Repositories: Spring Data JPA persistence
+- Models and DTOs: domain entities plus request and response contracts
+- Security: JWT-based stateless authentication and role-based authorization
+- Migrations: Flyway SQL files in `src/main/resources/db/migration`
+- Frontend: static pages and assets in `src/main/resources/static`
+
+## Run This Module
+
+From this directory:
 
 ```powershell
 $env:PMS_JWT_SECRET="replace-with-a-long-secret-at-least-32-bytes"
 $env:PMS_MAIL_PASSWORD="replace-with-mail-password"
-docker compose up --build
+.\mvnw.cmd spring-boot:run
 ```
 
 Open:
@@ -69,31 +80,25 @@ Open:
 http://localhost:8080
 ```
 
-The bundled compose file starts:
+## Docker Build and Run
 
-- `mysql`, using database `pms`, user `pms`, and host port `3307`
-- `app`, built from `Dockerfile`, exposed on port `8080`
-
-## Run With Maven
-
-Start MySQL first, then run:
+From this directory:
 
 ```powershell
-.\mvnw.cmd spring-boot:run
+$env:PMS_JWT_SECRET="replace-with-a-long-secret-at-least-32-bytes"
+$env:PMS_MAIL_PASSWORD="replace-with-mail-password"
+docker compose up --build
 ```
 
-The default `dev` profile expects:
+## Configuration
 
-```text
-SPRING_DATASOURCE_URL=jdbc:mysql://localhost:3306/pms?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
-SPRING_DATASOURCE_USERNAME=pms
-SPRING_DATASOURCE_PASSWORD=pms
-```
-
-The main configuration also supports these variables:
+Common variables:
 
 ```text
 SPRING_PROFILES_ACTIVE=dev
+SPRING_DATASOURCE_URL=jdbc:mysql://localhost:3306/pms?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+SPRING_DATASOURCE_USERNAME=pms
+SPRING_DATASOURCE_PASSWORD=pms
 PMS_JWT_SECRET=replace-with-a-long-secret-at-least-32-bytes
 PMS_JWT_EXPIRATION_MINUTES=480
 PMS_MAIL_HOST=smtp.gmail.com
@@ -104,62 +109,27 @@ PMS_MAIL_PASSWORD=
 PMS_MAIL_TEST_RECIPIENT=admindigitaldynamics@gmail.com
 ```
 
-## Seeded Users
+Keep real secrets outside committed files.
 
-The `DataSeeder` creates these users if missing:
+## Frontend Pages
 
-```text
-admin@digitaldynamics.co.za
-procurement@digitaldynamics.co.za
-requester@digitaldynamics.co.za
-approver1@digitaldynamics.co.za
-approver2@digitaldynamics.co.za
-approver3@digitaldynamics.co.za
-receiving@digitaldynamics.co.za
-```
+The static UI includes pages for login, dashboards, requisitions, approvals, suppliers, RFQs, quotations, purchase orders, goods receipt capture, reports, audit logs, users, profile, notifications, system settings, and supplier workflows.
 
-Default password:
+## API Access
 
-```text
-Password123!
-```
-
-## API Summary
-
-Authentication:
+Authentication starts at:
 
 ```http
 POST /api/auth/login
-POST /api/auth/register
-POST /api/auth/reset-password
 ```
 
-Main workflow endpoints:
+Send the returned JWT on protected requests:
 
 ```http
-GET  /api/dashboard
-GET  /api/suppliers
-POST /api/suppliers
-PUT  /api/suppliers/{id}
-PUT  /api/suppliers/{id}/status
-GET  /api/requisitions
-POST /api/requisitions
-POST /api/requisitions/{id}/submit
-GET  /api/approvals
-POST /api/approvals/{id}/decision
-GET  /api/rfqs
-POST /api/rfqs
-POST /api/quotations
-POST /api/rfqs/{id}/evaluate
-POST /api/awards
-GET  /api/purchase-orders
-POST /api/grns
-GET  /api/reports
+Authorization: Bearer <token>
 ```
 
-Additional versioned endpoints exist for auth, users, requisitions, and quotations under `/api/v1/...`.
-
-API documentation:
+Documentation endpoints:
 
 ```text
 /api/docs
@@ -167,21 +137,23 @@ API documentation:
 /swagger-ui.html
 ```
 
-Protected endpoints require:
+## Database
 
-```http
-Authorization: Bearer <token>
-```
-
-## Frontend
-
-The browser UI is served from:
+Schema changes should be made through Flyway migrations in:
 
 ```text
-src/main/resources/static
+src/main/resources/db/migration
 ```
 
-It contains static pages and JavaScript modules for login, dashboard, requisitions, approvals, suppliers, RFQs, quotations, purchase orders, reports, notifications, profile, users, system settings, and supplier-facing screens.
+Current migration set:
+
+```text
+V1__initial_schema.sql
+V2__create_notifications_table.sql
+V3__add_evaluation_records.sql
+V4__enhance_audit_logs.sql
+V5__create_approval_thresholds.sql
+```
 
 ## Tests
 
@@ -191,12 +163,12 @@ Run:
 .\mvnw.cmd test
 ```
 
-The test profile uses H2 in MySQL compatibility mode and Flyway migrations.
+## Proprietary License and Use Restrictions
 
-## Notes
+Copyright (c) 2026 Digital Dynamics. All rights reserved.
 
-- Flyway migration files are in `src/main/resources/db/migration`.
-- `ddl-auto` is set to `validate`, so schema changes should be made through migrations.
-- `spring.jpa.open-in-view` is disabled.
-- Keep real JWT secrets and mail passwords out of committed documentation and scripts.
+This module and all related source code, documentation, static assets, templates, database migrations, interface text, workflows, and configuration are proprietary and confidential unless Digital Dynamics gives express written permission otherwise.
 
+No permission is granted to copy, fork, clone for reuse, modify, publish, distribute, sublicense, sell, host, deploy, train on, scrape, extract, reverse engineer, or create derivative works from this module or any of its contents.
+
+Access to this module is limited to the specific purpose approved in writing by Digital Dynamics. Unauthorized use, reproduction, redistribution, or forking is prohibited.
