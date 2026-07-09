@@ -8,7 +8,9 @@ document.addEventListener("DOMContentLoaded", function () {
   renderNotificationsPage();
 });
 
-function renderNotificationsPage() {
+let backendNotifications = [];
+
+async function renderNotificationsPage() {
   if (!PMS.getNotifications || !PMS.renderDataTable || !PMS.confirmAction) {
     PMS.setContent(`
       <section class="view-section">
@@ -20,7 +22,7 @@ function renderNotificationsPage() {
     return;
   }
 
-  const notifications = PMS.getNotifications();
+  const notifications = await getMergedNotifications();
 
   PMS.setContent(`
     <section class="view-section">
@@ -84,6 +86,146 @@ function renderNotificationsPage() {
   attachNotificationEvents();
 }
 
+async function getMergedNotifications() {
+  const localNotifications = Array.isArray(PMS.getNotifications())
+    ? PMS.getNotifications()
+    : [];
+
+  const fetched = await fetchBackendNotifications();
+  backendNotifications = fetched;
+
+  const merged = [
+    ...fetched,
+    ...localNotifications
+  ];
+
+  return merged
+    .map(normalizeNotificationItem)
+    .sort(function (a, b) {
+      return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+    });
+}
+
+async function fetchBackendNotifications() {
+  try {
+    const token = PMS.getToken ? PMS.getToken() : "";
+    const response = await fetch("/api/v1/notifications", {
+      method: "GET",
+      headers: token
+        ? {
+            Accept: "application/json",
+            Authorization: `Bearer ${token}`
+          }
+        : {
+            Accept: "application/json"
+          }
+    });
+
+    if (!response.ok) {
+      return [];
+    }
+
+    const payload = await response.json();
+    const list = extractNotificationList(payload);
+
+    return list.map(function (item, index) {
+      return {
+        id: item.id || item.notificationId || `backend-${index + 1}`,
+        title: item.title || item.subject || "Notification",
+        message: item.message || item.body || item.content || "",
+        type: item.type || item.alertType || "INFO",
+        templateType: item.templateType || item.template || item.payloadTemplateType || "",
+        deliveryStatus: item.deliveryStatus || item.emailStatus || item.transportStatus || "",
+        assignedTo: item.assignedTo || item.assignee || item.owner || item.actor || "Unassigned",
+        read: Boolean(item.read),
+        createdAt: item.createdAt || item.timestamp || item.dateCreated || new Date().toISOString(),
+        link: item.link || "/notifications.html"
+      };
+    });
+  } catch (error) {
+    return [];
+  }
+}
+
+function extractNotificationList(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.data)) return payload.data;
+  if (Array.isArray(payload?.items)) return payload.items;
+  if (Array.isArray(payload?.content)) return payload.content;
+  if (Array.isArray(payload?.notifications)) return payload.notifications;
+  return [];
+}
+
+function normalizeNotificationItem(item) {
+  const templateType = String(item.templateType || item.template || "");
+  const message = String(item.message || "");
+  const title = String(item.title || "");
+  const combinedText = `${templateType} ${title} ${message}`;
+  const poRefMatch = combinedText.match(/\bPO-[A-Za-z0-9_-]+\b/i);
+
+  const isRfqAlert =
+    /^RFQ-/i.test(templateType.trim()) ||
+    /\bRFQ-[A-Za-z0-9_-]+\b/i.test(message) ||
+    /\bRFQ-[A-Za-z0-9_-]+\b/i.test(title);
+
+  const isPoAlert =
+    /\bPO-[A-Za-z0-9_-]+\b/i.test(combinedText) ||
+    /purchase order|order fulfillment|fulfillment release|dispatch(ed)?|issued|released/i.test(combinedText);
+
+  const isInventoryAlert =
+    /\bGRN\b/i.test(combinedText) ||
+    /goods received|inventory intake|delivery receipt|warehouse intake|receipt posted/i.test(combinedText);
+
+  const hasVarianceFlag =
+    /discrepancy|variance during delivery|delivery variance|quantity variance|financial variance/i.test(combinedText);
+
+  const deliveryStatus = String(item.deliveryStatus || "").toUpperCase();
+  const isEmailDeliveryFailed =
+    deliveryStatus === "EMAIL_FAILED" ||
+    /smtp delivery failed|email failed|delivery failed/i.test(combinedText);
+
+  const poReference = poRefMatch ? poRefMatch[0].toUpperCase() : "";
+  const matchesClientPoTracking = isPoStateMatchedWithClientTrackingLog(poReference, combinedText);
+
+  return {
+    ...item,
+    isRfqAlert: isRfqAlert,
+    isPoAlert: isPoAlert,
+    isInventoryAlert: isInventoryAlert,
+    hasVarianceFlag: hasVarianceFlag,
+    isEmailDeliveryFailed: isEmailDeliveryFailed,
+    isCoreProcurementAction: isPoAlert && matchesClientPoTracking,
+    poReference: poReference,
+    templateType: templateType
+  };
+}
+
+function isPoStateMatchedWithClientTrackingLog(poReference, combinedText) {
+  const sourceText = String(combinedText || "").toUpperCase();
+  const transitionKeywords = ["PO_CREATED", "AWARDED", "DISPATCHED", "FULFILLED", "CLOSED", "COMPLETED", "RELEASED"];
+
+  const hasTransitionKeyword = transitionKeywords.some(function (keyword) {
+    return sourceText.includes(keyword) || sourceText.includes(keyword.replace("_", " "));
+  });
+
+  let localLog = [];
+  try {
+    const raw = localStorage.getItem("pmsNotifications");
+    localLog = raw ? JSON.parse(raw) : [];
+  } catch (error) {
+    localLog = [];
+  }
+
+  const hasPoReferenceMatch = poReference
+    ? localLog.some(function (entry) {
+        const text = `${entry?.title || ""} ${entry?.message || ""}`.toUpperCase();
+        return text.includes(poReference);
+      })
+    : false;
+
+  return hasTransitionKeyword || hasPoReferenceMatch;
+}
+
 function renderNotificationsTable(notifications) {
   PMS.renderDataTable({
     container: "notificationsTable",
@@ -110,13 +252,52 @@ function renderNotificationsTable(notifications) {
         label: "Notification",
         key: "title",
         render: function (item) {
+          const rfqBadge = item.isRfqAlert
+            ? '<span class="badge warning" style="margin-left:8px;">RFQ Alert</span>'
+            : "";
+
+          const poBadge = item.isPoAlert
+            ? '<span class="badge info" style="margin-left:8px;">PO Alert</span>'
+            : "";
+
+          const inventoryBadge = item.isInventoryAlert
+            ? '<span class="badge" style="margin-left:8px;background:#0ea5a4;color:#ffffff;">Inventory Intake</span>'
+            : "";
+
+          const varianceBadge = item.hasVarianceFlag
+            ? '<span class="badge warning" style="margin-left:8px;">Variance Flag</span>'
+            : "";
+
+          const smtpFailureLabel = item.isEmailDeliveryFailed
+            ? '<span class="badge error" style="margin-left:8px;">System Alert: SMTP delivery failed. Error logged.</span>'
+            : "";
+
+          const coreActionClass = item.isCoreProcurementAction ? "procurement-core-action" : "";
+          const priorityClass = item.hasVarianceFlag ? " inventory-variance-priority" : "";
+
+          const assignmentText = item.assignedTo || "Unassigned";
+
+          const timeText = PMS.formatDateTime
+            ? PMS.formatDateTime(item.createdAt)
+            : String(item.createdAt || "-");
+
+          const poMeta = item.poReference ? ` | ${PMS.escapeHtml(item.poReference)}` : "";
+
           return `
-            <strong>${PMS.escapeHtml(item.title || "Notification")}</strong>
-            <p class="muted">${PMS.escapeHtml(item.message || "")}</p>
+            <div class="${coreActionClass}${priorityClass}">
+              <strong>${PMS.escapeHtml(item.title || "Notification")}</strong>
+              ${rfqBadge}
+              ${poBadge}
+              ${inventoryBadge}
+              ${varianceBadge}
+              ${smtpFailureLabel}
+              <p class="muted">${PMS.escapeHtml(item.message || "")}</p>
+              <p class="muted">Assigned: ${PMS.escapeHtml(assignmentText)} | ${PMS.escapeHtml(timeText)}${poMeta}</p>
+            </div>
           `;
         },
         searchValue: function (item) {
-          return `${item.title || ""} ${item.message || ""}`;
+          return `${item.title || ""} ${item.message || ""} ${item.templateType || ""} ${item.poReference || ""} ${item.assignedTo || ""} ${item.isInventoryAlert ? "GRN Inventory" : ""} ${item.hasVarianceFlag ? "Discrepancy Variance" : ""} ${item.isEmailDeliveryFailed ? "EMAIL_FAILED SMTP delivery failed" : ""}`;
         }
       },
       {

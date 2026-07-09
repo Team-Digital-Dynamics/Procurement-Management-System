@@ -14,6 +14,7 @@ import com.digitaldynamics.pms.model.ApprovalDecision;
 import com.digitaldynamics.pms.model.PurchaseOrderStatus;
 import com.digitaldynamics.pms.model.SupplierStatus;
 import com.digitaldynamics.pms.repository.ApprovalRepository;
+import com.digitaldynamics.pms.repository.AuditLogRepository;
 import com.digitaldynamics.pms.repository.PurchaseOrderRepository;
 import com.digitaldynamics.pms.repository.UserRepository;
 import com.digitaldynamics.pms.service.ProcurementService;
@@ -37,6 +38,9 @@ class ProcurementWorkflowTests {
 
     @Autowired
     PurchaseOrderRepository purchaseOrderRepository;
+
+    @Autowired
+    AuditLogRepository auditLogRepository;
 
     @Test
     void requisitionToReceiptWorkflow() {
@@ -65,7 +69,7 @@ class ProcurementWorkflowTests {
                 approver.getEmail());
 
         var rfq = procurementService.createRfq(new RfqRequest(requisition.id(), Instant.now().plusSeconds(86400),
-                50, 20, 15, 10, 5), "procurement@digitaldynamics.co.za");
+                List.of(supplier.id()), 50, 20, 15, 10, 5), "procurement@digitaldynamics.co.za");
         var quote = procurementService.submitQuotation(new QuotationRequest(rfq.id(), supplier.id(),
                 BigDecimal.valueOf(14500), 5, 90, 85), "supplier-portal");
         procurementService.evaluate(rfq.id(), "procurement@digitaldynamics.co.za");
@@ -75,5 +79,19 @@ class ProcurementWorkflowTests {
 
         assertThat(purchaseOrderRepository.findById(po.id()).orElseThrow().getStatus())
                 .isEqualTo(PurchaseOrderStatus.RECEIVED);
+
+        assertThat(auditLogRepository.search(null, null, null, null))
+                .extracting("action")
+                .contains(
+                        "CREATE_SUPPLIER",
+                        "SET_SUPPLIER_STATUS",
+                        "CREATE_REQUISITION",
+                        "SUBMIT_REQUISITION",
+                        "DECIDE_APPROVAL",
+                        "CREATE_RFQ",
+                        "SUBMIT_QUOTATION",
+                        "EVALUATE_RFQ",
+                        "AWARD_RFQ",
+                        "CAPTURE_GRN");
     }
 }

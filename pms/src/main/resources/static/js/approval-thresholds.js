@@ -1,5 +1,3 @@
-const THRESHOLD_KEY = "pmsApprovalThresholds";
-
 let approvalThresholds = [];
 
 document.addEventListener("DOMContentLoaded", function () {
@@ -9,12 +7,10 @@ document.addEventListener("DOMContentLoaded", function () {
     "Configure approval levels and monetary approval limits."
   );
 
-  renderApprovalThresholdsPage();
+  loadApprovalThresholdsPage();
 });
 
-function renderApprovalThresholdsPage() {
-  const user = PMS.getUser();
-
+async function loadApprovalThresholdsPage() {
   if (!PMS.hasAnyRole(["ADMIN", "ADMINISTRATOR"])) {
     PMS.setContent(`
       <section class="view-section">
@@ -24,8 +20,21 @@ function renderApprovalThresholdsPage() {
     return;
   }
 
-  approvalThresholds = getApprovalThresholds();
+  PMS.showLoading("Loading approval thresholds...");
 
+  try {
+    approvalThresholds = await PMS.getJson("/api/approval-thresholds");
+    renderApprovalThresholdsPage();
+  } catch (error) {
+    PMS.setContent(`
+      <section class="view-section">
+        ${PMS.message("error", error.message)}
+      </section>
+    `);
+  }
+}
+
+function renderApprovalThresholdsPage() {
   PMS.setContent(`
     <section class="view-section">
       <div class="section-header">
@@ -42,8 +51,7 @@ function renderApprovalThresholdsPage() {
       </div>
 
       ${PMS.message(
-        "error",
-        "Frontend checklist version only: these settings are saved in the browser. The backend still uses the hard-coded thresholds in ProcurementService.java until we connect this page to the database."
+        "success",
       )}
 
       <div class="grid-3">
@@ -133,7 +141,7 @@ function renderApprovalThresholdsPage() {
           </div>
 
           <div class="info-panel">
-            ${approvalThresholds
+            ${[...approvalThresholds]
               .sort(function (a, b) { return Number(a.level) - Number(b.level); })
               .map(flowItemTemplate)
               .join("")}
@@ -162,7 +170,7 @@ function renderThresholdsTable() {
   PMS.renderDataTable({
     container: "thresholdsTable",
     title: "Approval Thresholds",
-    rows: approvalThresholds.sort(function (a, b) {
+    rows: [...approvalThresholds].sort(function (a, b) {
       return Number(a.level) - Number(b.level);
     }),
     pageSize: 10,
@@ -271,13 +279,16 @@ function attachThresholdEvents() {
 
         if (!confirmed) return;
 
-        approvalThresholds = approvalThresholds.filter(function (item) {
-          return item.id !== id;
-        });
+        try {
+          await PMS.api(`/api/approval-thresholds/${encodeURIComponent(id)}`, {
+            method: "DELETE"
+          });
 
-        saveApprovalThresholds(approvalThresholds);
-        PMS.showToast("success", "Approval threshold deleted.");
-        renderApprovalThresholdsPage();
+          PMS.showToast("success", "Approval threshold deleted.");
+          await loadApprovalThresholdsPage();
+        } catch (error) {
+          PMS.showToast("error", error.message);
+        }
       }
     });
   }
@@ -294,11 +305,13 @@ function attachThresholdEvents() {
 
       if (!confirmed) return;
 
-      approvalThresholds = getDefaultThresholds();
-      saveApprovalThresholds(approvalThresholds);
-
-      PMS.showToast("success", "Approval thresholds reset to defaults.");
-      renderApprovalThresholdsPage();
+      try {
+        approvalThresholds = await PMS.postJson("/api/approval-thresholds/reset-defaults", {});
+        PMS.showToast("success", "Approval thresholds reset to defaults.");
+        renderApprovalThresholdsPage();
+      } catch (error) {
+        PMS.showToast("error", error.message);
+      }
     });
   }
 
@@ -309,7 +322,7 @@ function attachThresholdEvents() {
   }
 }
 
-function saveThreshold() {
+async function saveThreshold() {
   const id = document.getElementById("thresholdId").value;
   const level = Number(document.getElementById("level").value);
   const role = document.getElementById("role").value;
@@ -328,8 +341,7 @@ function saveThreshold() {
     return;
   }
 
-  const threshold = {
-    id: id || `TH-${Date.now()}`,
+  const payload = {
     level,
     role,
     minAmount,
@@ -337,26 +349,24 @@ function saveThreshold() {
     description
   };
 
-  if (id) {
-    approvalThresholds = approvalThresholds.map(function (item) {
-      return item.id === id ? threshold : item;
-    });
-  } else {
-    approvalThresholds = approvalThresholds.filter(function (item) {
-      return Number(item.level) !== level;
-    });
+  try {
+    if (id) {
+      await PMS.putJson(`/api/approval-thresholds/${encodeURIComponent(id)}`, payload);
+      PMS.showToast("success", "Approval threshold updated.");
+    } else {
+      await PMS.postJson("/api/approval-thresholds", payload);
+      PMS.showToast("success", "Approval threshold created.");
+    }
 
-    approvalThresholds.push(threshold);
+    await loadApprovalThresholdsPage();
+  } catch (error) {
+    PMS.showToast("error", error.message);
   }
-
-  saveApprovalThresholds(approvalThresholds);
-  PMS.showToast("success", "Approval threshold saved.");
-  renderApprovalThresholdsPage();
 }
 
 function editThreshold(id) {
   const threshold = approvalThresholds.find(function (item) {
-    return item.id === id;
+    return String(item.id) === String(id);
   });
 
   if (!threshold) return;
@@ -393,56 +403,6 @@ function clearThresholdForm() {
   if (cancelEditBtn) {
     cancelEditBtn.classList.add("hidden");
   }
-}
-
-function getApprovalThresholds() {
-  const raw = localStorage.getItem(THRESHOLD_KEY);
-
-  if (!raw) {
-    const defaults = getDefaultThresholds();
-    saveApprovalThresholds(defaults);
-    return defaults;
-  }
-
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : getDefaultThresholds();
-  } catch (error) {
-    return getDefaultThresholds();
-  }
-}
-
-function saveApprovalThresholds(thresholds) {
-  localStorage.setItem(THRESHOLD_KEY, JSON.stringify(thresholds || []));
-}
-
-function getDefaultThresholds() {
-  return [
-    {
-      id: "TH-LEVEL-1",
-      level: 1,
-      role: "APPROVER_LEVEL_1",
-      minAmount: 0,
-      maxAmount: 25000,
-      description: "Level 1 approval for low-value requisitions."
-    },
-    {
-      id: "TH-LEVEL-2",
-      level: 2,
-      role: "APPROVER_LEVEL_2",
-      minAmount: 25000.01,
-      maxAmount: 100000,
-      description: "Level 2 approval for medium-value requisitions."
-    },
-    {
-      id: "TH-LEVEL-3",
-      level: 3,
-      role: "APPROVER_LEVEL_3",
-      minAmount: 100000.01,
-      maxAmount: null,
-      description: "Level 3 approval for high-value requisitions."
-    }
-  ];
 }
 
 function flowItemTemplate(item) {

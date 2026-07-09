@@ -14,6 +14,7 @@ import com.digitaldynamics.pms.dto.ProcurementDtos.RfqResponse;
 import com.digitaldynamics.pms.dto.ProcurementDtos.SupplierRequest;
 import com.digitaldynamics.pms.dto.ProcurementDtos.SupplierResponse;
 import com.digitaldynamics.pms.exception.ApiException;
+import com.digitaldynamics.pms.model.AccountStatus;
 import com.digitaldynamics.pms.model.Approval;
 import com.digitaldynamics.pms.model.ApprovalDecision;
 import com.digitaldynamics.pms.model.GoodsReceivedNote;
@@ -42,8 +43,10 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -59,6 +62,7 @@ public class ProcurementService {
     private final GoodsReceivedNoteRepository grnRepository;
     private final UserRepository userRepository;
     private final AuditService auditService;
+    private final NotificationService notificationService;
     private final ProcurementMapper procurementMapper;
     private final SegregationOfDutiesGuard segregationOfDutiesGuard;
 
@@ -72,6 +76,7 @@ public class ProcurementService {
             GoodsReceivedNoteRepository grnRepository,
             UserRepository userRepository,
             AuditService auditService,
+            NotificationService notificationService,
             ProcurementMapper procurementMapper,
             SegregationOfDutiesGuard segregationOfDutiesGuard) {
 
@@ -84,6 +89,7 @@ public class ProcurementService {
         this.grnRepository = grnRepository;
         this.userRepository = userRepository;
         this.auditService = auditService;
+        this.notificationService = notificationService;
         this.procurementMapper = procurementMapper;
         this.segregationOfDutiesGuard = segregationOfDutiesGuard;
     }
@@ -265,6 +271,17 @@ public class ProcurementService {
                         ? RequisitionStatus.APPROVED
                         : RequisitionStatus.REJECTED);
 
+        User requester = requisition.getRequester();
+        if (requester != null) {
+            notificationService.dispatchAlert(
+                requester.getId(),
+                requester.getEmail(),
+                "APPROVAL_NOTIFICATION",
+                "Requisition " + requisition.getId() + " has been "
+                    + request.decision().name().toLowerCase() + "."
+            );
+        }
+
         auditService.logEvent(
                 actor,
                 "DECIDE_APPROVAL",
@@ -275,6 +292,17 @@ public class ProcurementService {
 
     @Transactional
     public RfqResponse createRfq(RfqRequest request, String actor) {
+        List<Long> supplierIds = request.supplierIds() == null
+                ? List.of()
+                : request.supplierIds().stream()
+                        .filter(id -> id != null && id > 0)
+                        .distinct()
+                        .toList();
+
+        if (supplierIds.isEmpty()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Select at least one approved supplier for this RFQ");
+        }
+
         if (request.priceWeight()
                 + request.deliveryWeight()
                 + request.qualityWeight()
@@ -304,12 +332,43 @@ public class ProcurementService {
 
         rfqRepository.save(rfq);
 
+        List<Supplier> selectedSuppliers = supplierRepository.findAllById(supplierIds);
+
+        if (selectedSuppliers.size() != new LinkedHashSet<>(supplierIds).size()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "One or more selected suppliers do not exist");
+        }
+
+        for (Supplier supplier : selectedSuppliers) {
+            if (supplier.getStatus() != SupplierStatus.APPROVED) {
+                throw new ApiException(
+                        HttpStatus.BAD_REQUEST,
+                        "All selected suppliers must be in APPROVED status");
+            }
+
+            Optional<User> supplierUser = userRepository.findByEmail(supplier.getContactEmail().toLowerCase());
+            if (supplierUser.isPresent()) {
+                notificationService.dispatchAlert(
+                        supplierUser.get().getId(),
+                        supplier.getContactEmail(),
+                        "RFQ_NOTIFICATION",
+                        "You have been invited to submit a quotation for " + rfq.getRfqNumber(),
+                        true);
+            } else {
+                notificationService.dispatchAlert(
+                        null,
+                        supplier.getContactEmail(),
+                        "RFQ_NOTIFICATION",
+                        "You have been invited to submit a quotation for " + rfq.getRfqNumber(),
+                        false);
+            }
+        }
+
         auditService.logEvent(
                 actor,
                 "CREATE_RFQ",
                 "Rfq",
                 String.valueOf(rfq.getId()),
-                "RFQ created from requisition");
+                "RFQ created from requisition and invitations sent to " + selectedSuppliers.size() + " supplier(s)");
 
         return procurementMapper.toRfqResponse(rfq);
     }
@@ -438,6 +497,25 @@ public class ProcurementService {
 
         purchaseOrderRepository.save(po);
 
+        Optional<User> awardedSupplierUser = userRepository.findByEmail(po.getSupplier().getContactEmail().toLowerCase());
+        if (awardedSupplierUser.isPresent()) {
+            notificationService.dispatchAlert(
+                awardedSupplierUser.get().getId(),
+                po.getSupplier().getContactEmail(),
+                "PURCHASE_ORDER_NOTIFICATION",
+                "Purchase order " + po.getPoNumber() + " has been issued to your supplier profile.",
+                true
+            );
+        } else {
+            notificationService.dispatchAlert(
+                null,
+                po.getSupplier().getContactEmail(),
+                "PURCHASE_ORDER_NOTIFICATION",
+                "Purchase order " + po.getPoNumber() + " has been issued to your supplier profile.",
+                false
+            );
+        }
+
         auditService.logEvent(
                 actor,
                 "AWARD_RFQ",
@@ -475,6 +553,36 @@ public class ProcurementService {
                         : RequisitionStatus.RECEIVED);
 
         grnRepository.save(grn);
+
+        if (discrepancy) {
+            List<User> procurementOfficers = userRepository.findByRolesContaining(UserRole.PROCUREMENT_OFFICER)
+                .stream()
+                .filter(user -> user.getStatus() == AccountStatus.ACTIVE)
+                .toList();
+
+            for (User officer : procurementOfficers) {
+            notificationService.dispatchAlert(
+                officer.getId(),
+                officer.getEmail(),
+                "GRN_NOTIFICATION",
+                "GRN discrepancy detected for purchase order " + po.getPoNumber()
+                    + ". Received value " + request.receivedValue()
+                    + " differs from expected value " + po.getTotalAmount() + "."
+            );
+            }
+        } else {
+            Optional<User> awardedSupplierUser = userRepository
+                .findByEmail(po.getSupplier().getContactEmail().toLowerCase());
+
+            if (awardedSupplierUser.isPresent()) {
+            notificationService.dispatchAlert(
+                awardedSupplierUser.get().getId(),
+                po.getSupplier().getContactEmail(),
+                "GRN_NOTIFICATION",
+                "Goods received note captured for purchase order " + po.getPoNumber() + "."
+            );
+            }
+        }
 
         auditService.logEvent(
                 actor,

@@ -32,7 +32,7 @@ services:
       PMS_MAIL_PORT: ${PMS_MAIL_PORT:-587}
       PMS_MAIL_PROTOCOL: ${PMS_MAIL_PROTOCOL:-smtp}
       PMS_MAIL_USERNAME: ${PMS_MAIL_USERNAME:-digitaldynamics@dalesmith.co.za}
-      PMS_MAIL_PASSWORD: ${PMS_MAIL_PASSWORD:?PMS_MAIL_PASSWORD is required}
+      PMS_MAIL_PASSWORD: ${PMS_MAIL_PASSWORD:-}
     ports:
       - "8080:8080"
 

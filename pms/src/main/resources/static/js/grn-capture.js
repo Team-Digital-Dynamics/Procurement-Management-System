@@ -1,4 +1,6 @@
 (function () {
+  const OVER_DELIVERY_VARIANCE_RATIO = 1.05;
+
   const demoPurchaseOrder = {
     id: 1,
     poNumber: "PO-2026-001",
@@ -17,13 +19,32 @@
 
   async function fetchPurchaseOrder() {
     const poId = getPurchaseOrderId();
+    const normalizedPoId = Number(poId);
 
     try {
       const data = await PMS.getJson("/api/purchase-orders/" + encodeURIComponent(poId));
       return data || demoPurchaseOrder;
     } catch (error) {
+      try {
+        const list = await PMS.getJson("/api/purchase-orders");
+        const match = Array.isArray(list)
+          ? list.find(function (entry) {
+              return Number(entry?.id) === normalizedPoId;
+            })
+          : null;
+
+        if (match) {
+          return match;
+        }
+      } catch (listError) {
+        console.warn("Unable to resolve purchase order from list endpoint:", listError.message);
+      }
+
       console.warn("Using demo PO data for GRN:", error.message);
-      return demoPurchaseOrder;
+      return {
+        ...demoPurchaseOrder,
+        id: Number.isFinite(normalizedPoId) && normalizedPoId > 0 ? normalizedPoId : demoPurchaseOrder.id
+      };
     }
   }
 
@@ -89,6 +110,16 @@
   }
 
   async function submitGrn(event, po) {
+        const purchaseOrderId = Number(po.id || getPurchaseOrderId());
+
+        if (!Number.isFinite(purchaseOrderId) || purchaseOrderId <= 0) {
+          const statusHost = document.getElementById("grnSaveStatus");
+          if (statusHost) {
+            statusHost.innerHTML = PMS.message("error", "Invalid purchase order selected for GRN capture.");
+          }
+          return;
+        }
+
     event.preventDefault();
 
     const form = event.target;
@@ -96,7 +127,13 @@
     const receivedValue = Number(form.receivedValue.value || 0);
     const receivedDate = form.receivedDate.value;
     const notes = form.notes.value.trim();
-    const grnStatus = calculateGrnStatus(poTotal, receivedValue);
+    const currentUser = PMS.getUser ? PMS.getUser() : null;
+    const receivedBy = String(
+      currentUser?.fullName ||
+      currentUser?.email ||
+      currentUser?.userId ||
+      "System User"
+    ).trim();
 
     if (receivedValue <= 0) {
       alert("Please enter a received value greater than zero.");
@@ -108,74 +145,361 @@
       return;
     }
 
+    const isPartialDeliveryInput = isPartialDeliveryRequest(poTotal, receivedValue);
+    const isOverDeliveryInput = isOverDeliveryRequest(poTotal, receivedValue);
+
+    if (isPartialDeliveryInput) {
+      const preview = document.getElementById("discrepancyPreview");
+      if (preview) {
+        preview.innerHTML = PMS.message(
+          "info",
+          "Partial delivery detected. Submission will proceed and backend rules will validate acceptance."
+        );
+      }
+    }
+
+    if (isOverDeliveryInput) {
+      const preview = document.getElementById("discrepancyPreview");
+      if (preview) {
+        preview.innerHTML = PMS.message(
+          "warning",
+          "Over-delivery variance detected. Submission will proceed while backend discrepancy checks are enforced."
+        );
+      }
+    }
+
     const payload = {
-      purchaseOrderId: po.id,
-      poNumber: po.poNumber,
-      orderedValue: poTotal,
+      purchaseOrderId: purchaseOrderId,
+      receivedBy: receivedBy,
       receivedValue: receivedValue,
-      receivedDate: receivedDate,
-      notes: notes,
-      status: grnStatus
+      notes: notes
     };
 
+    const submitButton = form.querySelector("button[type='submit']");
+    const originalButtonText = submitButton ? submitButton.textContent : "";
+
+    if (submitButton) {
+      submitButton.disabled = true;
+      submitButton.textContent = "Saving...";
+    }
+
     try {
-      await PMS.postJson("/api/grns", payload);
+      const response = await postGrnWithFallback(payload);
 
-      PMS.setContent(`
-        <section class="view-section">
-          ${PMS.message("success", "GRN captured successfully. Status: " + PMS.formatStatus(grnStatus))}
+      const responseBody = await readGrnResponseBody(response);
+      const grnReference = extractGrnReceiptReference(responseBody);
 
-          <div class="form-actions">
-            <a class="btn btn-secondary" href="/purchase-orders.html">Back to Purchase Orders</a>
-            <a class="btn btn-primary" href="/purchase-order-detail.html?id=${encodeURIComponent(po.id)}">View Purchase Order</a>
-          </div>
-        </section>
-      `);
+      if (isOverDeliveryInput && !isDiscrepancyResponse(responseBody)) {
+        throw new Error("Over-delivery submission was accepted, but backend discrepancy status was not returned.");
+      }
+
+      updateGrnSavedStatus(grnReference);
+      handleDiscrepancyWarning(responseBody);
+      syncPoStatusFromGrnResponse(responseBody, po);
+
+      if (isOverDeliveryInput && (isOverDeliveryResponse(responseBody) || isDiscrepancyResponse(responseBody))) {
+        updateGrnHeaderStatusToDiscrepancy();
+        showOverDeliveryEscalationMessage();
+      }
+
+      if (isPartialDeliveryResponse(responseBody)) {
+        updateGrnHeaderStatusIndicator("PARTIAL_DELIVERY");
+      }
+
+      if (typeof PMS !== "undefined" && PMS.showToast) {
+        PMS.showToast("success", "GRN saved successfully.");
+      }
     } catch (error) {
-      console.warn("GRN backend endpoint not available yet:", error.message);
+      const statusHost = document.getElementById("grnSaveStatus");
 
-      PMS.setContent(`
-        <section class="view-section">
-          ${PMS.message("success", "GRN captured as frontend demo data. Status: " + PMS.formatStatus(grnStatus))}
+      if (statusHost) {
+        statusHost.innerHTML = PMS.message("error", error.message || "Unable to save GRN.");
+      }
+    } finally {
+      if (submitButton) {
+        submitButton.disabled = false;
+        submitButton.textContent = originalButtonText;
+      }
+    }
+  }
 
-          <div class="detail-grid">
-            <div class="detail-item">
-              <span>PO Number</span>
-              <strong>${PMS.escapeHtml(payload.poNumber || "-")}</strong>
-            </div>
+  async function postGrnWithFallback(payload) {
+    const endpoints = ["/api/v1/grns", "/api/grns"];
+    let lastError = null;
+    const token = typeof PMS !== "undefined" && PMS.getToken ? PMS.getToken() : null;
 
-            <div class="detail-item">
-              <span>Ordered Value</span>
-              <strong>${PMS.formatCurrency(payload.orderedValue)}</strong>
-            </div>
+    const headers = {
+      "Content-Type": "application/json",
+      Accept: "application/json"
+    };
 
-            <div class="detail-item">
-              <span>Received Value</span>
-              <strong>${PMS.formatCurrency(payload.receivedValue)}</strong>
-            </div>
+    if (token) {
+      headers.Authorization = "Bearer " + token;
+    }
 
-            <div class="detail-item">
-              <span>GRN Status</span>
-              <strong>${PMS.statusBadge(payload.status)}</strong>
-            </div>
+    for (const endpoint of endpoints) {
+      try {
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(payload)
+        });
 
-            <div class="detail-item">
-              <span>Received Date</span>
-              <strong>${PMS.escapeHtml(payload.receivedDate)}</strong>
-            </div>
+        if (response.ok) {
+          return response;
+        }
 
-            <div class="detail-item">
-              <span>Notes</span>
-              <strong>${PMS.escapeHtml(payload.notes || "No notes captured.")}</strong>
-            </div>
-          </div>
+        if (response.status === 404 || response.status === 405) {
+          continue;
+        }
 
-          <div class="form-actions">
-            <a class="btn btn-secondary" href="/purchase-orders.html">Back to Purchase Orders</a>
-            <a class="btn btn-primary" href="/purchase-order-detail.html?id=${encodeURIComponent(po.id)}">View Purchase Order</a>
-          </div>
-        </section>
-      `);
+        const backendMessage = await readBackendErrorMessage(response);
+        throw new Error(backendMessage || "Unable to save GRN.");
+      } catch (networkError) {
+        lastError = networkError;
+      }
+    }
+
+    if (lastError instanceof Error) {
+      throw lastError;
+    }
+
+    throw new Error("Unable to save GRN.");
+  }
+
+  async function readBackendErrorMessage(response) {
+    try {
+      const contentType = response.headers.get("content-type") || "";
+
+      if (contentType.includes("application/json")) {
+        const payload = await response.json();
+        return payload.message || payload.error || payload.detail || null;
+      }
+
+      const text = await response.text();
+      return text || null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  async function readGrnResponseBody(response) {
+    const contentType = response.headers.get("content-type") || "";
+
+    try {
+      if (contentType.includes("application/json")) {
+        return await response.json();
+      }
+
+      const text = await response.text();
+      return text || null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function extractGrnReceiptReference(responseBody) {
+    if (!responseBody) {
+      return "Not returned";
+    }
+
+    if (typeof responseBody === "string") {
+      return responseBody.trim() || "Not returned";
+    }
+
+    return (
+      responseBody.grnReceiptReference ||
+      responseBody.grnReference ||
+      responseBody.reference ||
+      responseBody.receiptNumber ||
+      responseBody.grnNumber ||
+      responseBody.id ||
+      "Not returned"
+    );
+  }
+
+  function updateGrnSavedStatus(grnReference) {
+    const statusHost = document.getElementById("grnSaveStatus");
+    const referenceHost = document.getElementById("grnReceiptReference");
+
+    if (statusHost) {
+      statusHost.innerHTML = PMS.message("success", "Saved");
+    }
+
+    if (referenceHost) {
+      referenceHost.textContent = String(grnReference || "Not returned");
+    }
+  }
+
+  function handleDiscrepancyWarning(responseBody) {
+    const warningHost = document.getElementById("grnDiscrepancyWarning");
+
+    if (!warningHost) {
+      return;
+    }
+
+    const hasDiscrepancy = Boolean(responseBody && responseBody.discrepancy === true);
+
+    if (!hasDiscrepancy) {
+      warningHost.setAttribute("hidden", "hidden");
+      warningHost.innerHTML = "";
+      return;
+    }
+
+    warningHost.removeAttribute("hidden");
+    warningHost.className = "message warning";
+    warningHost.textContent = "Warning: A financial or quantity discrepancy has been flagged for this delivery receipt.";
+  }
+
+  function isPartialDeliveryRequest(poTotal, receivedValue) {
+    return Number(receivedValue) < Number(poTotal);
+  }
+
+  function isOverDeliveryRequest(poTotal, receivedValue) {
+    const ordered = Number(poTotal || 0);
+    const received = Number(receivedValue || 0);
+
+    if (!Number.isFinite(ordered) || ordered <= 0 || !Number.isFinite(received)) {
+      return false;
+    }
+
+    return received > ordered * OVER_DELIVERY_VARIANCE_RATIO;
+  }
+
+  function isDiscrepancyResponse(responseBody) {
+    if (!responseBody || typeof responseBody === "string") {
+      return false;
+    }
+
+    const status = String(
+      responseBody.status ||
+      responseBody.grnStatus ||
+      responseBody.intakeStatus ||
+      responseBody.deliveryStatus ||
+      ""
+    ).toUpperCase();
+
+    return responseBody.discrepancy === true || status.includes("DISCREPANCY");
+  }
+
+  function isOverDeliveryResponse(responseBody) {
+    if (!responseBody || typeof responseBody === "string") {
+      return false;
+    }
+
+    const status = String(
+      responseBody.status ||
+      responseBody.grnStatus ||
+      responseBody.intakeStatus ||
+      responseBody.deliveryStatus ||
+      ""
+    ).toUpperCase();
+
+    return status === "OVER_DELIVERY" || status === "DELIVERY_DISCREPANCY";
+  }
+
+  function isPartialDeliveryResponse(responseBody) {
+    if (!responseBody || typeof responseBody === "string") {
+      return false;
+    }
+
+    const status = String(
+      responseBody.status ||
+      responseBody.grnStatus ||
+      responseBody.intakeStatus ||
+      responseBody.deliveryStatus ||
+      ""
+    ).toUpperCase();
+
+    return status === "PARTIAL_DELIVERY" || status === "PARTIAL";
+  }
+
+  function updateGrnHeaderStatusIndicator(nextStatus) {
+    const headerStatus = document.getElementById("grnHeaderStatusIndicator");
+
+    if (!headerStatus) {
+      return;
+    }
+
+    headerStatus.innerHTML = PMS.statusBadge(nextStatus);
+  }
+
+  function syncPoStatusFromGrnResponse(responseBody, fallbackPo) {
+    const parentPurchaseOrder = extractParentPurchaseOrder(responseBody) || fallbackPo || {};
+    const backendPoStatus = String(
+      parentPurchaseOrder.status ||
+      parentPurchaseOrder.poStatus ||
+      parentPurchaseOrder.state ||
+      ""
+    ).toUpperCase();
+
+    if (!backendPoStatus) {
+      return;
+    }
+
+    updateVisiblePoStatusBadges(backendPoStatus);
+
+    if (isConcludedPoStatus(backendPoStatus)) {
+      const preview = document.getElementById("discrepancyPreview");
+      if (preview) {
+        preview.innerHTML = PMS.message(
+          "success",
+          "Parent purchase order status has been updated to " + backendPoStatus + ". The procurement loop for this item is concluded."
+        );
+      }
+    }
+  }
+
+  function extractParentPurchaseOrder(responseBody) {
+    if (!responseBody || typeof responseBody === "string") {
+      return null;
+    }
+
+    return (
+      responseBody.purchaseOrder ||
+      responseBody.parentPurchaseOrder ||
+      responseBody.po ||
+      responseBody.data?.purchaseOrder ||
+      responseBody.data?.parentPurchaseOrder ||
+      null
+    );
+  }
+
+  function isConcludedPoStatus(status) {
+    const normalizedStatus = String(status || "").toUpperCase();
+    return normalizedStatus === "CLOSED" || normalizedStatus === "COMPLETED";
+  }
+
+  function updateVisiblePoStatusBadges(status) {
+    const normalizedStatus = String(status || "").toUpperCase();
+    const statusTargets = document.querySelectorAll("[data-po-status-badge]");
+
+    statusTargets.forEach(function (node) {
+      node.innerHTML = PMS.statusBadge(normalizedStatus);
+    });
+  }
+
+  function updateGrnHeaderStatusToDiscrepancy() {
+    const headerStatus = document.getElementById("grnHeaderStatusIndicator");
+
+    if (!headerStatus) {
+      return;
+    }
+
+    headerStatus.innerHTML = "<span class=\"badge\" style=\"background:#b91c1c;color:#ffffff;\">DELIVERY_DISCREPANCY</span>";
+  }
+
+  function showOverDeliveryEscalationMessage() {
+    const warningHost = document.getElementById("grnDiscrepancyWarning");
+
+    if (warningHost) {
+      warningHost.removeAttribute("hidden");
+      warningHost.className = "message error";
+      warningHost.textContent = "Over-delivery confirmed. An automated system alert has been triggered for the Procurement Officer to review the intake.";
+    }
+
+    if (typeof PMS !== "undefined" && PMS.showToast) {
+      PMS.showToast("warning", "Over-delivery alert sent to Procurement Officer for review.");
     }
   }
 
@@ -226,7 +550,7 @@
           <div class="stat-card">
             <div>
               <p class="stat-label">PO Status</p>
-              <h3>${PMS.statusBadge(po.status)}</h3>
+              <h3 id="grnHeaderStatusIndicator" data-po-status-badge="true">${PMS.statusBadge(po.status)}</h3>
               <span>Current purchase order status</span>
             </div>
           </div>
@@ -242,6 +566,19 @@
             </p>
           </div>
         </div>
+
+        <div class="detail-grid" style="margin-bottom:12px;">
+          <div class="detail-item">
+            <span>GRN Save Status</span>
+            <strong id="grnSaveStatus">${PMS.statusBadge("PENDING")}</strong>
+          </div>
+          <div class="detail-item">
+            <span>GRN Receipt Reference</span>
+            <strong id="grnReceiptReference">Not generated</strong>
+          </div>
+        </div>
+
+        <div id="grnDiscrepancyWarning" class="message warning" hidden></div>
 
         <form id="grnForm" class="form-grid">
           <div class="form-group">

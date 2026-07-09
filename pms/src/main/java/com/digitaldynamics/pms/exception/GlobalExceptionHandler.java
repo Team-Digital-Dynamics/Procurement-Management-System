@@ -7,9 +7,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -60,6 +62,24 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ConstraintViolationException.class)
     ResponseEntity<ApiResponse<Void>> constraintViolation(ConstraintViolationException ex) {
         return errorResponse(HttpStatus.BAD_REQUEST, "Validation failed: " + ex.getMessage());
+    }
+
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    ResponseEntity<ApiResponse<Void>> methodNotSupported(HttpRequestMethodNotSupportedException ex) {
+        String method = ex.getMethod();
+        String message = (method == null || method.isBlank())
+                ? "Request method is not supported for this endpoint."
+                : "Request method '" + method + "' is not supported for this endpoint.";
+        return errorResponse(HttpStatus.METHOD_NOT_ALLOWED, message);
+    }
+
+    @ExceptionHandler(NoResourceFoundException.class)
+    ResponseEntity<ApiResponse<Void>> resourceNotFound(NoResourceFoundException ex) {
+        String path = ex.getResourcePath();
+        String message = (path == null || path.isBlank())
+                ? "Requested resource was not found."
+                : "Requested resource was not found: " + path;
+        return errorResponse(HttpStatus.NOT_FOUND, message);
     }
 
     @ExceptionHandler(Exception.class)

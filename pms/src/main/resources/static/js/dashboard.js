@@ -11,10 +11,14 @@ async function loadDashboard() {
 
     PMS.setContent(`
       <section class="grid-4">
-        ${statCard("Submitted Requisitions", data.submittedRequisitions, "Waiting for approval")}
-        ${statCard("Approved Requisitions", data.approvedRequisitions, "Ready for RFQ creation")}
-        ${statCard("Open RFQs", data.openRfqs, "RFQs currently open")}
-        ${statCard("Approved Suppliers", data.approvedSuppliers, "Suppliers ready to use")}
+        ${statCard("Submitted Requisitions", data.submittedRequisitions, "Waiting for approval", "kpiSubmittedRequisitions")}
+        ${statCard("Approved Requisitions", data.approvedRequisitions, "Ready for RFQ creation", "kpiApprovedRequisitions")}
+        ${statCard("Open RFQs", data.openRfqs, "RFQs currently open", "kpiOpenRfqs")}
+        ${statCard("Approved Suppliers", data.approvedSuppliers, "Suppliers ready to use", "kpiApprovedSuppliers")}
+      </section>
+
+      <section class="grid-1" style="margin-top:12px;">
+        ${statCard("Total Active Spend", data.totalActiveSpend, "Total active procurement spend", "kpiTotalActiveSpend", true)}
       </section>
 
       <section class="grid-2">
@@ -62,16 +66,79 @@ async function loadDashboard() {
         </div>
       </section>
     `);
+
+    bindDashboardSummaryMetrics();
   } catch (error) {
     PMS.setContent(`<section class="view-section">${PMS.message("error", error.message)}</section>`);
   }
 }
 
-function statCard(label, value, text) {
+async function bindDashboardSummaryMetrics() {
+  try {
+    const response = await fetch("/api/v1/reports/dashboard-summary", {
+      method: "GET",
+      headers: {
+        Accept: "application/json"
+      }
+    });
+
+    if (!response.ok) {
+      return;
+    }
+
+    const summary = await response.json();
+
+    const totalActiveSpend =
+      summary?.totalActiveSpend ??
+      summary?.activeSpend ??
+      summary?.aggregates?.totalActiveSpend ??
+      0;
+
+    const pendingRequisitions =
+      summary?.pendingRequisitions ??
+      summary?.counts?.pendingRequisitions ??
+      summary?.submittedRequisitions ??
+      0;
+
+    const openRfqs =
+      summary?.openRfqs ??
+      summary?.counts?.openRfqs ??
+      0;
+
+    bindKpiValue("kpiTotalActiveSpend", totalActiveSpend, true);
+    bindKpiValue("kpiSubmittedRequisitions", pendingRequisitions, false);
+    bindKpiValue("kpiOpenRfqs", openRfqs, false);
+  } catch (error) {
+    bindKpiValue("kpiTotalActiveSpend", 0, true);
+    bindKpiValue("kpiSubmittedRequisitions", 0, false);
+    bindKpiValue("kpiOpenRfqs", 0, false);
+  }
+}
+
+function bindKpiValue(containerId, value, isCurrency) {
+  const node = document.getElementById(containerId);
+
+  if (!node) {
+    return;
+  }
+
+  const numeric = Number(value);
+  const safeNumber = Number.isFinite(numeric) ? numeric : 0;
+
+  node.textContent = isCurrency
+    ? PMS.formatCurrency(safeNumber)
+    : String(safeNumber);
+}
+
+function statCard(label, value, text, valueId, isCurrency) {
+  const numeric = Number(value);
+  const safeNumber = Number.isFinite(numeric) ? numeric : 0;
+  const formattedValue = isCurrency ? PMS.formatCurrency(safeNumber) : String(safeNumber);
+
   return `
     <div class="stat-card">
       <p class="label">${PMS.escapeHtml(label)}</p>
-      <p class="value">${PMS.escapeHtml(value ?? 0)}</p>
+      <p class="value" ${valueId ? `id="${PMS.escapeHtml(valueId)}"` : ""}>${PMS.escapeHtml(formattedValue)}</p>
       <p class="muted">${PMS.escapeHtml(text)}</p>
     </div>
   `;
