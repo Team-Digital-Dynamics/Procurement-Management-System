@@ -88,7 +88,12 @@ async function renderNotificationsPage() {
 
 async function getMergedNotifications() {
   const localNotifications = Array.isArray(PMS.getNotifications())
-    ? PMS.getNotifications()
+    ? PMS.getNotifications().map(function (item) {
+        return {
+          ...item,
+          source: "local"
+        };
+      })
     : [];
 
   const fetched = await fetchBackendNotifications();
@@ -139,12 +144,63 @@ async function fetchBackendNotifications() {
         assignedTo: item.assignedTo || item.assignee || item.owner || item.actor || "Unassigned",
         read: Boolean(item.read),
         createdAt: item.createdAt || item.timestamp || item.dateCreated || new Date().toISOString(),
-        link: item.link || "/notifications.html"
+        link: item.link || "/notifications.html",
+        source: "backend"
       };
     });
   } catch (error) {
     return [];
   }
+}
+
+async function callBackendNotificationsApi(path, options) {
+  const token = PMS.getToken ? PMS.getToken() : "";
+  const response = await fetch(path, {
+    method: (options && options.method) || "GET",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    },
+    body: options && options.body ? JSON.stringify(options.body) : undefined
+  });
+
+  if (!response.ok) {
+    throw new Error("Unable to update notifications.");
+  }
+
+  if (response.status === 204) {
+    return null;
+  }
+
+  return response.json().catch(function () {
+    return null;
+  });
+}
+
+async function setBackendNotificationRead(id, read) {
+  await callBackendNotificationsApi(`/api/v1/notifications/${encodeURIComponent(id)}/read`, {
+    method: "PATCH",
+    body: { read: read }
+  });
+}
+
+async function markAllBackendNotificationsRead() {
+  await callBackendNotificationsApi("/api/v1/notifications/read-all", {
+    method: "PATCH"
+  });
+}
+
+async function deleteBackendNotification(id) {
+  await callBackendNotificationsApi(`/api/v1/notifications/${encodeURIComponent(id)}`, {
+    method: "DELETE"
+  });
+}
+
+async function clearBackendReadNotifications() {
+  await callBackendNotificationsApi("/api/v1/notifications/read", {
+    method: "DELETE"
+  });
 }
 
 function extractNotificationList(payload) {
@@ -325,16 +381,17 @@ function renderNotificationsTable(notifications) {
         key: "actions",
         render: function (item) {
           const id = PMS.escapeHtml(item.id);
+          const source = PMS.escapeHtml(item.source || "local");
 
           return `
             <div class="action-row">
               ${
                 item.read
-                  ? `<button class="btn btn-soft btn-sm" data-action="mark-unread" data-id="${id}" type="button">Mark Unread</button>`
-                  : `<button class="btn btn-soft btn-sm" data-action="mark-read" data-id="${id}" type="button">Mark Read</button>`
+                  ? `<button class="btn btn-soft btn-sm" data-action="mark-unread" data-id="${id}" data-source="${source}" type="button">Mark Unread</button>`
+                  : `<button class="btn btn-soft btn-sm" data-action="mark-read" data-id="${id}" data-source="${source}" type="button">Mark Read</button>`
               }
 
-              <button class="btn btn-danger btn-sm" data-action="delete" data-id="${id}" type="button">
+              <button class="btn btn-danger btn-sm" data-action="delete" data-id="${id}" data-source="${source}" type="button">
                 Delete
               </button>
             </div>
@@ -362,42 +419,65 @@ function attachNotificationEvents() {
 
       const action = button.dataset.action;
       const id = button.dataset.id;
+      const source = (button.dataset.source || "local").toLowerCase();
+      const backendId = Number(id);
 
-      if (action === "mark-read") {
-        PMS.markNotificationRead(id);
-        PMS.showToast("success", "Notification marked as read.");
-        renderNotificationsPage();
-      }
+      try {
+        if (action === "mark-read") {
+          if (source === "backend" && Number.isFinite(backendId)) {
+            await setBackendNotificationRead(backendId, true);
+          } else {
+            PMS.markNotificationRead(id);
+          }
+          PMS.showToast("success", "Notification marked as read.");
+          renderNotificationsPage();
+        }
 
-      if (action === "mark-unread") {
-        markNotificationUnread(id);
-        PMS.showToast("info", "Notification marked as unread.");
-        renderNotificationsPage();
-      }
+        if (action === "mark-unread") {
+          if (source === "backend" && Number.isFinite(backendId)) {
+            await setBackendNotificationRead(backendId, false);
+          } else {
+            markNotificationUnread(id);
+          }
+          PMS.showToast("info", "Notification marked as unread.");
+          renderNotificationsPage();
+        }
 
-      if (action === "delete") {
-        const confirmed = await PMS.confirmAction({
-          title: "Delete notification",
-          message: "Are you sure you want to delete this notification?",
-          confirmText: "Delete",
-          cancelText: "Cancel",
-          danger: true
-        });
+        if (action === "delete") {
+          const confirmed = await PMS.confirmAction({
+            title: "Delete notification",
+            message: "Are you sure you want to delete this notification?",
+            confirmText: "Delete",
+            cancelText: "Cancel",
+            danger: true
+          });
 
-        if (!confirmed) return;
+          if (!confirmed) return;
 
-        PMS.deleteNotification(id);
-        PMS.showToast("success", "Notification deleted.");
-        renderNotificationsPage();
+          if (source === "backend" && Number.isFinite(backendId)) {
+            await deleteBackendNotification(backendId);
+          } else {
+            PMS.deleteNotification(id);
+          }
+          PMS.showToast("success", "Notification deleted.");
+          renderNotificationsPage();
+        }
+      } catch (error) {
+        PMS.showToast("error", error.message || "Unable to update notifications.");
       }
     });
   }
 
   if (markAllReadBtn) {
-    markAllReadBtn.addEventListener("click", function () {
-      PMS.markAllNotificationsRead();
-      PMS.showToast("success", "All notifications marked as read.");
-      renderNotificationsPage();
+    markAllReadBtn.addEventListener("click", async function () {
+      try {
+        await markAllBackendNotificationsRead();
+        PMS.markAllNotificationsRead();
+        PMS.showToast("success", "All notifications marked as read.");
+        renderNotificationsPage();
+      } catch (error) {
+        PMS.showToast("error", error.message || "Unable to mark all as read.");
+      }
     });
   }
 
@@ -413,14 +493,20 @@ function attachNotificationEvents() {
 
       if (!confirmed) return;
 
-      const unreadOnly = PMS.getNotifications().filter(function (item) {
-        return !item.read;
-      });
+      try {
+        await clearBackendReadNotifications();
 
-      PMS.saveNotifications(unreadOnly);
-      PMS.updateNotificationBadge();
-      PMS.showToast("success", "Read notifications cleared.");
-      renderNotificationsPage();
+        const unreadOnly = PMS.getNotifications().filter(function (item) {
+          return !item.read;
+        });
+
+        PMS.saveNotifications(unreadOnly);
+        PMS.updateNotificationBadge();
+        PMS.showToast("success", "Read notifications cleared.");
+        renderNotificationsPage();
+      } catch (error) {
+        PMS.showToast("error", error.message || "Unable to clear read notifications.");
+      }
     });
   }
 

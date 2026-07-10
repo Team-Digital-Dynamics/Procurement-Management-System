@@ -7,5 +7,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface ApprovalRepository extends JpaRepository<Approval, Long> {
     List<Approval> findByApproverEmailAndDecision(String email, ApprovalDecision decision);
+
+    List<Approval> findByApproverEmailOrderByUpdatedAtDesc(String email);
+
     List<Approval> findByRequisitionIdOrderByApprovalLevel(Long requisitionId);
 }

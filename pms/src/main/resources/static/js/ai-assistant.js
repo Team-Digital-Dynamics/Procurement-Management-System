@@ -307,35 +307,14 @@ async function handleAssistantSubmit(event) {
 
     // 3. Submit to backend AI endpoint and append response as markdown-rendered assistant message
     try {
-      const response = await fetch("/api/v1/ai/chat", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json, text/plain"
-        },
-        body: JSON.stringify({
-          query: question
-        })
+      const assistantResponse = await PMS.postJson("/api/assistant", {
+        message: question
       });
 
-      if (response.status === 400) {
-        const message = await buildAiBadRequestMessage(response);
-        assistantMessages.pop();
-        assistantMessages.push({
-          sender: "assistant",
-          text: message
-        });
-        refreshMessages();
-        return;
-      }
-
-      if (!response.ok) {
-        const httpError = new Error("AI assistant service is currently unavailable.");
-        httpError.httpStatus = response.status;
-        throw httpError;
-      }
-
-      const assistantPayload = await parseAssistantResponsePayload(response);
+      const assistantPayload = {
+        text: assistantResponse?.answer || assistantResponse?.message || "",
+        targetPage: ""
+      };
       const intercepted = interceptAssistantResponse(assistantPayload.text);
 
       assistantMessages.pop(); // Remove "Thinking..."

@@ -1,6 +1,7 @@
 package com.digitaldynamics.pms.controller;
 
 import com.digitaldynamics.pms.dto.ProcurementDtos.ApprovalActionRequest;
+import com.digitaldynamics.pms.dto.ProcurementDtos.ApprovalHistoryResponse;
 import com.digitaldynamics.pms.dto.ProcurementDtos.ApprovalResponse;
 import com.digitaldynamics.pms.dto.ProcurementDtos.AwardRequest;
 import com.digitaldynamics.pms.dto.ProcurementDtos.GrnRequest;
@@ -99,6 +100,12 @@ public class ProcurementController {
         procurementService.decideApproval(id, request, user.id(), user.email(), user.hasRole(UserRole.ADMIN));
     }
 
+    @GetMapping("/approvals/history")
+    @PreAuthorize("hasAnyRole('APPROVER_LEVEL_1','APPROVER_LEVEL_2','APPROVER_LEVEL_3','ADMIN')")
+    List<ApprovalHistoryResponse> decisionHistory(@AuthenticationPrincipal CurrentUser user) {
+        return procurementService.decisionHistory(user.email(), user.hasRole(UserRole.ADMIN));
+    }
+
     @GetMapping("/rfqs")
     List<RfqResponse> rfqs() {
         return procurementService.rfqs();
@@ -128,6 +135,30 @@ public class ProcurementController {
         return procurementService.purchaseOrders();
     }
 
+    @GetMapping({ "/purchase-orders/{id}", "/v1/purchase-orders/{id}" })
+    @PreAuthorize("hasAnyRole('ADMIN','PROCUREMENT_OFFICER','RECEIVING_CLERK','SUPPLIER')")
+    PurchaseOrderResponse purchaseOrderById(@PathVariable Long id) {
+        return procurementService.purchaseOrderById(id);
+    }
+
+    @PostMapping("/v1/purchase-orders/generate")
+    @PreAuthorize("hasAnyRole('ADMIN','PROCUREMENT_OFFICER')")
+    PurchaseOrderResponse generatePurchaseOrder(
+            @Valid @RequestBody PurchaseOrderGenerateRequest request,
+            @AuthenticationPrincipal CurrentUser user) {
+        return procurementService.generatePurchaseOrder(
+                request.rfqId(),
+                request.requisitionId(),
+                request.supplierId(),
+                user.email());
+    }
+
+    @PostMapping("/v1/purchase-orders/{id}/dispatch")
+    @PreAuthorize("hasAnyRole('ADMIN','PROCUREMENT_OFFICER')")
+    PurchaseOrderResponse dispatchPurchaseOrder(@PathVariable Long id, @AuthenticationPrincipal CurrentUser user) {
+        return procurementService.dispatchPurchaseOrder(id, user.email());
+    }
+
     @PostMapping("/grns")
     @PreAuthorize("hasAnyRole('RECEIVING_CLERK','ADMIN')")
     void grn(@Valid @RequestBody GrnRequest request, @AuthenticationPrincipal CurrentUser user) {
@@ -138,5 +169,8 @@ public class ProcurementController {
     @PreAuthorize("hasAnyRole('ADMIN','PROCUREMENT_OFFICER')")
     Map<String, Object> reports() {
         return procurementService.dashboard();
+    }
+
+    public record PurchaseOrderGenerateRequest(Long rfqId, Long requisitionId, Long supplierId) {
     }
 }

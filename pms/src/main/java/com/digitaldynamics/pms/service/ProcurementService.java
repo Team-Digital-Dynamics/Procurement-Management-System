@@ -1,6 +1,7 @@
 package com.digitaldynamics.pms.service;
 
 import com.digitaldynamics.pms.dto.ProcurementDtos.ApprovalActionRequest;
+import com.digitaldynamics.pms.dto.ProcurementDtos.ApprovalHistoryResponse;
 import com.digitaldynamics.pms.dto.ProcurementDtos.ApprovalResponse;
 import com.digitaldynamics.pms.dto.ProcurementDtos.AwardRequest;
 import com.digitaldynamics.pms.dto.ProcurementDtos.GrnRequest;
@@ -581,6 +582,14 @@ public class ProcurementService {
                 "GRN_NOTIFICATION",
                 "Goods received note captured for purchase order " + po.getPoNumber() + "."
             );
+            } else {
+            notificationService.dispatchAlert(
+                null,
+                po.getSupplier().getContactEmail(),
+                "GRN_NOTIFICATION",
+                "Goods received note captured for purchase order " + po.getPoNumber() + ".",
+                false
+            );
             }
         }
 
@@ -634,6 +643,21 @@ public class ProcurementService {
                 .toList();
     }
 
+            @Transactional(readOnly = true)
+            public List<ApprovalHistoryResponse> decisionHistory(String approverEmail, boolean adminView) {
+            List<Approval> approvals = adminView
+                ? approvalRepository.findAll()
+                : approvalRepository.findByApproverEmailOrderByUpdatedAtDesc(approverEmail);
+
+            return approvals.stream()
+                .sorted(Comparator
+                    .comparing((Approval approval) -> approval.getDecidedAt() == null ? Instant.EPOCH : approval.getDecidedAt())
+                    .reversed()
+                    .thenComparing(Approval::getId, Comparator.reverseOrder()))
+                .map(procurementMapper::toApprovalHistoryResponse)
+                .toList();
+            }
+
     @Transactional(readOnly = true)
     public List<RfqResponse> rfqs() {
         return rfqRepository.findAll()
@@ -648,6 +672,107 @@ public class ProcurementService {
                 .stream()
                 .map(procurementMapper::toPurchaseOrderResponse)
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public PurchaseOrderResponse purchaseOrderById(Long id) {
+        return procurementMapper.toPurchaseOrderResponse(purchaseOrder(id));
+    }
+
+    @Transactional
+    public PurchaseOrderResponse generatePurchaseOrder(Long rfqId, Long requisitionId, Long supplierId, String actor) {
+        if (rfqId == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "rfqId is required to generate a purchase order");
+        }
+
+        Quotation selectedQuotation = quotationRepository.findByRfqIdAndWinningTrue(rfqId)
+                .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST,
+                        "No winning quotation found. Evaluate and award the RFQ first"));
+
+        if (supplierId != null && !supplierId.equals(selectedQuotation.getSupplier().getId())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST,
+                    "Winning quotation does not belong to the requested supplier");
+        }
+
+        if (requisitionId != null && !requisitionId.equals(selectedQuotation.getRfq().getRequisition().getId())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST,
+                    "Winning quotation does not belong to the requested requisition");
+        }
+
+        if (purchaseOrderRepository.findByQuotationId(selectedQuotation.getId()).isPresent()) {
+            throw new ApiException(HttpStatus.CONFLICT,
+                    "Action Blocked: A Purchase Order has already been generated for this item.");
+        }
+
+        PurchaseOrder po = new PurchaseOrder();
+        po.setPoNumber("PO-" + Instant.now().toEpochMilli());
+        po.setQuotation(selectedQuotation);
+        po.setSupplier(selectedQuotation.getSupplier());
+        po.setTotalAmount(selectedQuotation.getTotalAmount());
+
+        selectedQuotation.getRfq().setStatus(RfqStatus.AWARDED);
+        selectedQuotation.getRfq().getRequisition().setStatus(RequisitionStatus.PO_CREATED);
+
+        purchaseOrderRepository.save(po);
+
+        Optional<User> supplierUser = userRepository.findByEmail(po.getSupplier().getContactEmail().toLowerCase());
+        if (supplierUser.isPresent()) {
+            notificationService.dispatchAlert(
+                    supplierUser.get().getId(),
+                    po.getSupplier().getContactEmail(),
+                    "PURCHASE_ORDER_NOTIFICATION",
+                    "Purchase order " + po.getPoNumber() + " has been generated for your supplier profile.",
+                    true);
+        } else {
+            notificationService.dispatchAlert(
+                    null,
+                    po.getSupplier().getContactEmail(),
+                    "PURCHASE_ORDER_NOTIFICATION",
+                    "Purchase order " + po.getPoNumber() + " has been generated for your supplier profile.",
+                    false);
+        }
+
+        auditService.logEvent(
+                actor,
+                "GENERATE_PO",
+                "PurchaseOrder",
+                String.valueOf(po.getId()),
+                "PO generated via purchase order endpoint");
+
+        return procurementMapper.toPurchaseOrderResponse(po);
+    }
+
+    @Transactional
+    public PurchaseOrderResponse dispatchPurchaseOrder(Long purchaseOrderId, String actor) {
+        PurchaseOrder po = purchaseOrder(purchaseOrderId);
+
+        Optional<User> supplierUser = userRepository.findByEmail(po.getSupplier().getContactEmail().toLowerCase());
+        String message = "Purchase order " + po.getPoNumber() + " has been dispatched to your supplier profile.";
+
+        if (supplierUser.isPresent()) {
+            notificationService.dispatchAlert(
+                    supplierUser.get().getId(),
+                    po.getSupplier().getContactEmail(),
+                    "PURCHASE_ORDER_DISPATCH_NOTIFICATION",
+                    message,
+                    true);
+        } else {
+            notificationService.dispatchAlert(
+                    null,
+                    po.getSupplier().getContactEmail(),
+                    "PURCHASE_ORDER_DISPATCH_NOTIFICATION",
+                    message,
+                    false);
+        }
+
+        auditService.logEvent(
+                actor,
+                "DISPATCH_PO",
+                "PurchaseOrder",
+                String.valueOf(po.getId()),
+                "PO dispatch communication sent to supplier");
+
+        return procurementMapper.toPurchaseOrderResponse(po);
     }
 
     private void createApproval(Requisition requisition, UserRole role, int level) {
@@ -716,5 +841,10 @@ public class ProcurementService {
     private Quotation quotation(Long id) {
         return quotationRepository.findById(id)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Quotation not found"));
+    }
+
+    private PurchaseOrder purchaseOrder(Long id) {
+        return purchaseOrderRepository.findById(id)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Purchase order not found"));
     }
 }
