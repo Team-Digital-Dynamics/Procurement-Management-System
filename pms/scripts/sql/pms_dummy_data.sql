@@ -22,16 +22,16 @@ DELETE FROM user_roles WHERE user_id BETWEEN 9001 AND 9049;
 DELETE FROM users WHERE id BETWEEN 9001 AND 9049;
 DELETE FROM audit_logs WHERE id BETWEEN 9701 AND 9799;
 
--- Users (password hash below is bcrypt for a known test password in many demos: "password")
+-- Users (password hash below is bcrypt for test password: "Password123!")
 INSERT INTO users (id, created_at, updated_at, email, password_hash, full_name, status, failed_login_attempts, approval_limit) VALUES
-(9001, NOW(), NOW(), 'admin.test@digitaldynamics.co.za', '$2a$10$7EqJtq98hPqEX7fNZaFWoO5M6Q7YVOlJawVSxGInxjeRGna43EIB', 'Admin Test', 'ACTIVE', 0, 1000000.00),
-(9002, NOW(), NOW(), 'procurement.test@digitaldynamics.co.za', '$2a$10$7EqJtq98hPqEX7fNZaFWoO5M6Q7YVOlJawVSxGInxjeRGna43EIB', 'Procurement Officer Test', 'ACTIVE', 0, 500000.00),
-(9003, NOW(), NOW(), 'requester.test@digitaldynamics.co.za', '$2a$10$7EqJtq98hPqEX7fNZaFWoO5M6Q7YVOlJawVSxGInxjeRGna43EIB', 'Requester Test', 'ACTIVE', 0, 10000.00),
-(9004, NOW(), NOW(), 'approver1.test@digitaldynamics.co.za', '$2a$10$7EqJtq98hPqEX7fNZaFWoO5M6Q7YVOlJawVSxGInxjeRGna43EIB', 'Approver Level 1 Test', 'ACTIVE', 0, 25000.00),
-(9005, NOW(), NOW(), 'approver2.test@digitaldynamics.co.za', '$2a$10$7EqJtq98hPqEX7fNZaFWoO5M6Q7YVOlJawVSxGInxjeRGna43EIB', 'Approver Level 2 Test', 'ACTIVE', 0, 150000.00),
-(9006, NOW(), NOW(), 'receiving.test@digitaldynamics.co.za', '$2a$10$7EqJtq98hPqEX7fNZaFWoO5M6Q7YVOlJawVSxGInxjeRGna43EIB', 'Receiving Clerk Test', 'ACTIVE', 0, 10000.00),
-(9007, NOW(), NOW(), 'supplier.user1@digitaldynamics.co.za', '$2a$10$7EqJtq98hPqEX7fNZaFWoO5M6Q7YVOlJawVSxGInxjeRGna43EIB', 'Supplier User 1', 'ACTIVE', 0, 0.00),
-(9008, NOW(), NOW(), 'supplier.user2@digitaldynamics.co.za', '$2a$10$7EqJtq98hPqEX7fNZaFWoO5M6Q7YVOlJawVSxGInxjeRGna43EIB', 'Supplier User 2', 'ACTIVE', 0, 0.00);
+(9001, NOW(), NOW(), 'admin.test@digitaldynamics.co.za', '$2a$10$uu7jxwAmnQSZwxmW5U9ow.W1r94vM3r.mQJFxMvedllzAsCNE8nk.', 'Admin Test', 'ACTIVE', 0, 1000000.00),
+(9002, NOW(), NOW(), 'procurement.test@digitaldynamics.co.za', '$2a$10$uu7jxwAmnQSZwxmW5U9ow.W1r94vM3r.mQJFxMvedllzAsCNE8nk.', 'Procurement Officer Test', 'ACTIVE', 0, 500000.00),
+(9003, NOW(), NOW(), 'requester.test@digitaldynamics.co.za', '$2a$10$uu7jxwAmnQSZwxmW5U9ow.W1r94vM3r.mQJFxMvedllzAsCNE8nk.', 'Requester Test', 'ACTIVE', 0, 10000.00),
+(9004, NOW(), NOW(), 'approver1.test@digitaldynamics.co.za', '$2a$10$uu7jxwAmnQSZwxmW5U9ow.W1r94vM3r.mQJFxMvedllzAsCNE8nk.', 'Approver Level 1 Test', 'ACTIVE', 0, 25000.00),
+(9005, NOW(), NOW(), 'approver2.test@digitaldynamics.co.za', '$2a$10$uu7jxwAmnQSZwxmW5U9ow.W1r94vM3r.mQJFxMvedllzAsCNE8nk.', 'Approver Level 2 Test', 'ACTIVE', 0, 150000.00),
+(9006, NOW(), NOW(), 'receiving.test@digitaldynamics.co.za', '$2a$10$uu7jxwAmnQSZwxmW5U9ow.W1r94vM3r.mQJFxMvedllzAsCNE8nk.', 'Receiving Clerk Test', 'ACTIVE', 0, 10000.00),
+(9007, NOW(), NOW(), 'supplier.user1@digitaldynamics.co.za', '$2a$10$uu7jxwAmnQSZwxmW5U9ow.W1r94vM3r.mQJFxMvedllzAsCNE8nk.', 'Supplier User 1', 'ACTIVE', 0, 0.00),
+(9008, NOW(), NOW(), 'supplier.user2@digitaldynamics.co.za', '$2a$10$uu7jxwAmnQSZwxmW5U9ow.W1r94vM3r.mQJFxMvedllzAsCNE8nk.', 'Supplier User 2', 'ACTIVE', 0, 0.00);
 
 INSERT INTO user_roles (user_id, role) VALUES
 (9001, 'ADMIN'),
@@ -56,21 +56,30 @@ INSERT INTO requisitions (id, created_at, updated_at, title, business_justificat
 (9202, NOW(), NOW(), 'Printer Cartridges Q3', 'Quarterly cartridge replenishment for head office.', 9003, 'SUBMITTED', 7800.00),
 (9203, NOW(), NOW(), 'Warehouse Barcode Scanners', 'Improve receiving speed and stock accuracy.', 9003, 'APPROVED', 24500.00),
 (9204, NOW(), NOW(), 'Office Ergonomic Chairs', 'Reduce workplace injury and improve compliance.', 9003, 'RFQ_CREATED', 36000.00),
-(9205, NOW(), NOW(), 'Non-Approved Travel Request', 'Travel expansion not aligned with current budget controls.', 9003, 'REJECTED', 18400.00);
+(9205, NOW(), NOW(), 'Non-Approved Travel Request', 'Travel expansion not aligned with current budget controls.', 9003, 'REJECTED', 18400.00),
+(9206, NOW(), NOW(), 'Network Switch Replacement', 'Replace unstable edge switches in the procurement office.', 9003, 'SUBMITTED', 21900.00),
+(9207, NOW(), NOW(), 'Archive Storage Cabinets', 'Secure audit files for compliance retention.', 9003, 'SUBMITTED', 12600.00),
+(9208, NOW(), NOW(), 'Receiving Bay Label Printers', 'Improve receiving throughput and stock traceability.', 9003, 'SUBMITTED', 15800.00);
 
 INSERT INTO requisition_items (id, created_at, updated_at, requisition_id, description, quantity, estimated_unit_price) VALUES
 (9221, NOW(), NOW(), 9201, 'Business Laptop 16GB/512GB', 4.00, 13000.00),
 (9222, NOW(), NOW(), 9202, 'Laser Printer Cartridge Set', 12.00, 650.00),
 (9223, NOW(), NOW(), 9203, 'Barcode Scanner Rugged', 7.00, 3500.00),
 (9224, NOW(), NOW(), 9204, 'Ergonomic Mesh Chair', 18.00, 2000.00),
-(9225, NOW(), NOW(), 9205, 'Travel Package Placeholder', 1.00, 18400.00);
+(9225, NOW(), NOW(), 9205, 'Travel Package Placeholder', 1.00, 18400.00),
+(9226, NOW(), NOW(), 9206, 'Managed Network Switch 48-Port', 3.00, 7300.00),
+(9227, NOW(), NOW(), 9207, 'Fireproof Archive Cabinet', 6.00, 2100.00),
+(9228, NOW(), NOW(), 9208, 'Industrial Label Printer', 4.00, 3950.00);
 
 -- Approvals
 INSERT INTO approvals (id, created_at, updated_at, requisition_id, approver_id, approval_level, decision, comments, decided_at) VALUES
 (9251, NOW(), NOW(), 9202, 9004, 1, 'PENDING', 'Awaiting review.', NULL),
 (9252, NOW(), NOW(), 9203, 9004, 1, 'APPROVED', 'Operationally required.', NOW()),
 (9253, NOW(), NOW(), 9204, 9005, 2, 'APPROVED', 'Budget validated for Q3.', NOW()),
-(9254, NOW(), NOW(), 9205, 9004, 1, 'REJECTED', 'Budget not allocated.', NOW());
+(9254, NOW(), NOW(), 9205, 9004, 1, 'REJECTED', 'Budget not allocated.', NOW()),
+(9255, NOW(), NOW(), 9206, 9004, 1, 'PENDING', 'Queued for L1 financial review.', NULL),
+(9256, NOW(), NOW(), 9207, 9004, 1, 'PENDING', 'Awaiting L1 capacity confirmation.', NULL),
+(9257, NOW(), NOW(), 9208, 9005, 2, 'PENDING', 'Queued for L2 threshold approval.', NULL);
 
 -- RFQs
 INSERT INTO rfqs (id, created_at, updated_at, requisition_id, rfq_number, submission_deadline, status, price_weight, delivery_weight, quality_weight, terms_weight, performance_weight) VALUES

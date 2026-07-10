@@ -1,6 +1,7 @@
 package com.digitaldynamics.pms.service;
 
 import com.digitaldynamics.pms.dto.ProcurementDtos.ApprovalResponse;
+import com.digitaldynamics.pms.dto.ProcurementDtos.ApprovalHistoryResponse;
 import com.digitaldynamics.pms.dto.ProcurementDtos.PurchaseOrderResponse;
 import com.digitaldynamics.pms.dto.ProcurementDtos.QuotationResponse;
 import com.digitaldynamics.pms.dto.ProcurementDtos.RequisitionItemResponse;
@@ -9,18 +10,33 @@ import com.digitaldynamics.pms.dto.ProcurementDtos.RfqResponse;
 import com.digitaldynamics.pms.dto.ProcurementDtos.SupplierResponse;
 import com.digitaldynamics.pms.model.Approval;
 import com.digitaldynamics.pms.model.PurchaseOrder;
+import com.digitaldynamics.pms.model.PurchaseOrderStatus;
 import com.digitaldynamics.pms.model.Quotation;
 import com.digitaldynamics.pms.model.Requisition;
 import com.digitaldynamics.pms.model.Rfq;
 import com.digitaldynamics.pms.model.Supplier;
+import com.digitaldynamics.pms.model.SupplierStatus;
 import org.springframework.stereotype.Component;
 import java.util.List;
 
 @Component
 public class ProcurementMapper {
         public SupplierResponse toSupplierResponse(Supplier supplier) {
+                SupplierStatus canonicalStatus = canonicalSupplierStatus(supplier.getStatus());
                 return new SupplierResponse(supplier.getId(), supplier.getName(), supplier.getContactEmail(),
-                                supplier.getStatus(), supplier.getPerformanceScore());
+                                canonicalStatus, supplier.getPerformanceScore());
+        }
+
+        private SupplierStatus canonicalSupplierStatus(SupplierStatus status) {
+                if (status == SupplierStatus.PENDING_REVIEW) {
+                        return SupplierStatus.PENDING;
+                }
+
+                if (status == SupplierStatus.INACTIVE) {
+                        return SupplierStatus.SUSPENDED;
+                }
+
+                return status;
         }
 
         public RequisitionResponse toRequisitionResponse(Requisition requisition) {
@@ -52,6 +68,21 @@ public class ProcurementMapper {
                                 approval.getApprover().getEmail(), approval.getDecision(), approval.getComments());
         }
 
+        public ApprovalHistoryResponse toApprovalHistoryResponse(Approval approval) {
+                Requisition requisition = approval.getRequisition();
+                return new ApprovalHistoryResponse(
+                                approval.getId(),
+                                requisition.getId(),
+                                requisition.getTitle(),
+                                requisition.getRequester().getEmail(),
+                                requisition.getTotalAmount(),
+                                approval.getApprovalLevel(),
+                                approval.getApprover().getEmail(),
+                                approval.getDecision(),
+                                approval.getComments(),
+                                approval.getDecidedAt());
+        }
+
         public RfqResponse toRfqResponse(Rfq rfq) {
                 return new RfqResponse(rfq.getId(), rfq.getRfqNumber(), rfq.getRequisition().getId(),
                                 rfq.getSubmissionDeadline(), rfq.getStatus());
@@ -80,6 +111,8 @@ public class ProcurementMapper {
                                         ? po.getQuotation().getRfq().getRequisition().getId()
                                         : null;
 
+        PurchaseOrderStatus canonicalStatus = canonicalPurchaseOrderStatus(po.getStatus());
+
         return new PurchaseOrderResponse(
                         po.getId(),
                         po.getPoNumber(),
@@ -89,8 +122,16 @@ public class ProcurementMapper {
                         rfqId,
                         requisitionId,
                         po.getTotalAmount(),
-                        po.getStatus().name(),
+                                                canonicalStatus.name(),
                         po.getCreatedAt(),
                         po.getUpdatedAt());
     }
+
+        private PurchaseOrderStatus canonicalPurchaseOrderStatus(PurchaseOrderStatus status) {
+                if (status == PurchaseOrderStatus.PENDING) {
+                        return PurchaseOrderStatus.ISSUED;
+                }
+
+                return status;
+        }
 }

@@ -15,6 +15,7 @@ import com.digitaldynamics.pms.model.PurchaseOrderStatus;
 import com.digitaldynamics.pms.model.SupplierStatus;
 import com.digitaldynamics.pms.repository.ApprovalRepository;
 import com.digitaldynamics.pms.repository.AuditLogRepository;
+import com.digitaldynamics.pms.repository.NotificationRepository;
 import com.digitaldynamics.pms.repository.PurchaseOrderRepository;
 import com.digitaldynamics.pms.repository.UserRepository;
 import com.digitaldynamics.pms.service.ProcurementService;
@@ -42,10 +43,13 @@ class ProcurementWorkflowTests {
     @Autowired
     AuditLogRepository auditLogRepository;
 
+        @Autowired
+        NotificationRepository notificationRepository;
+
     @Test
     void requisitionToReceiptWorkflow() {
         var supplier = procurementService.createSupplier(
-                new SupplierRequest("Cape Office Supplies", "quotes@cape-office.test", "0210000000", "TAX-001"),
+                new SupplierRequest("Cape Office Supplies", "approver2@digitaldynamics.co.za", "0210000000", "TAX-001"),
                 "admin@digitaldynamics.co.za");
         procurementService.setSupplierStatus(supplier.id(), SupplierStatus.APPROVED, "admin@digitaldynamics.co.za");
 
@@ -93,5 +97,13 @@ class ProcurementWorkflowTests {
                         "EVALUATE_RFQ",
                         "AWARD_RFQ",
                         "CAPTURE_GRN");
+
+        assertThat(notificationRepository.findAll())
+                .extracting("type")
+                .contains(
+                        "APPROVAL_NOTIFICATION",
+                        "RFQ_NOTIFICATION",
+                        "PURCHASE_ORDER_NOTIFICATION",
+                        "GRN_NOTIFICATION");
     }
 }

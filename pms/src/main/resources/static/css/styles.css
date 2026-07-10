@@ -914,9 +914,36 @@ tr:last-child td {
   box-shadow: 0 8px 18px rgba(15, 47, 79, 0.06);
 }
 
+.scout-option-grid {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.scout-option-btn {
+  border: 1px solid rgba(30, 95, 140, 0.22);
+  background: #ffffff;
+  color: var(--primary-dark);
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.scout-option-btn:hover {
+  background: var(--primary-soft);
+  border-color: rgba(30, 95, 140, 0.32);
+}
+
 .scout-message-row.user .scout-message-bubble {
   background: var(--primary-soft);
   border-color: rgba(30, 95, 140, 0.18);
+}
+
+.scout-message-row.user .scout-option-grid {
+  display: none;
 }
 
 .scout-input-area {

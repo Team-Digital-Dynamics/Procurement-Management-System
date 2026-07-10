@@ -40,7 +40,7 @@ public class NotificationDispatchWorker {
                 User user = userRepository.findById(recipientId)
                         .orElseThrow(() -> new IllegalStateException("Recipient not found: " + recipientId));
 
-                notificationService.dispatchAlert(
+                boolean delivered = notificationService.dispatchAlert(
                         recipientId,
                         user.getEmail(),
                         notification.getType(),
@@ -48,8 +48,10 @@ public class NotificationDispatchWorker {
                         false
                 );
 
-                notification.setReadStatus(true);
-                notificationRepository.save(notification);
+                if (delivered) {
+                    notification.setReadStatus(true);
+                    notificationRepository.save(notification);
+                }
             } catch (Exception ex) {
                 LOG.warn("Notification delivery failed for notificationId={} recipientId={}",
                         notification.getId(), notification.getRecipientId(), ex);
